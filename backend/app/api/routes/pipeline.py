@@ -161,3 +161,17 @@ async def delete_failed_runs(
     )
     await session.commit()
     return {"deleted": result.rowcount}
+
+
+@router.delete("/runs/{run_id}", status_code=200)
+async def delete_pipeline_run(
+    run_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete a single pipeline run by ID."""
+    run = await session.get(PipelineRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Pipeline run not found")
+    await session.delete(run)
+    await session.commit()
+    return {"deleted": run_id}

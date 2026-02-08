@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Article, ArticleList, PipelineRun } from "@/lib/api";
+import type { Article, ArticleList, ArticleContent, PipelineRun } from "@/lib/api";
 import {
   fetchArticles,
   approveArticle,
   rejectArticle,
+  fetchArticleContent,
+  deleteArticle,
   fetchPipelineRuns,
   deleteFailedRuns,
+  deletePipelineRun,
 } from "@/lib/api";
 
 export default function ArticlesPage() {
@@ -17,6 +20,8 @@ export default function ArticlesPage() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [page, setPage] = useState(1);
   const [expandedRunId, setExpandedRunId] = useState<number | null>(null);
+  const [previewContent, setPreviewContent] = useState<ArticleContent | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   // "generating" and "failed" are pipeline-run filters, not article statuses
   const isPipelineFilter = statusFilter === "generating" || statusFilter === "failed";
@@ -50,6 +55,30 @@ export default function ArticlesPage() {
 
   const handleReject = async (id: number) => {
     await rejectArticle(id);
+    load();
+  };
+
+  const handlePreview = async (id: number) => {
+    setPreviewLoading(true);
+    try {
+      const content = await fetchArticleContent(id);
+      setPreviewContent(content);
+    } catch {
+      setError("Failed to load article content");
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleDeleteArticle = async (id: number) => {
+    if (!confirm("この記事を削除しますか？")) return;
+    await deleteArticle(id);
+    load();
+  };
+
+  const handleDeleteRun = async (id: number) => {
+    if (!confirm("このパイプライン実行を削除しますか？")) return;
+    await deletePipelineRun(id);
     load();
   };
 
@@ -155,18 +184,27 @@ export default function ArticlesPage() {
                         {new Date(run.created_at).toLocaleTimeString("ja-JP")}
                       </span>
                       {run.status === "failed" && (
-                        <button
-                          onClick={() =>
-                            setExpandedRunId(
-                              expandedRunId === run.id ? null : run.id
-                            )
-                          }
-                          className="px-2 py-1 text-xs bg-red-50 text-red-700 rounded hover:bg-red-100"
-                        >
-                          {expandedRunId === run.id
-                            ? "Hide Log"
-                            : "Show Log"}
-                        </button>
+                        <>
+                          <button
+                            onClick={() =>
+                              setExpandedRunId(
+                                expandedRunId === run.id ? null : run.id
+                              )
+                            }
+                            className="px-2 py-1 text-xs bg-red-50 text-red-700 rounded hover:bg-red-100"
+                          >
+                            {expandedRunId === run.id
+                              ? "Hide Log"
+                              : "Show Log"}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteRun(run.id)}
+                            className="px-2 py-1 text-xs bg-gray-50 text-gray-500 rounded hover:bg-red-50 hover:text-red-600"
+                            title="Delete run"
+                          >
+                            🗑
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -230,6 +268,36 @@ export default function ArticlesPage() {
         </div>
       )}
 
+      {/* Article Content Preview Modal */}
+      {previewContent && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h3 className="text-lg font-bold truncate pr-4">
+                {previewContent.title}
+              </h3>
+              <button
+                onClick={() => setPreviewContent(null)}
+                className="px-3 py-1 text-sm bg-gray-100 text-gray-600 rounded hover:bg-gray-200 shrink-0"
+              >
+                Close
+              </button>
+            </div>
+            <div className="overflow-y-auto px-6 py-4 prose prose-sm max-w-none">
+              {previewContent.content_markdown ? (
+                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-800">
+                  {previewContent.content_markdown}
+                </pre>
+              ) : (
+                <p className="text-gray-400 text-center py-8">
+                  No content available
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Articles Table */}
       {(!statusFilter ||
         (statusFilter !== "generating" && statusFilter !== "failed")) && (
@@ -274,6 +342,13 @@ export default function ArticlesPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1">
+                      <button
+                        onClick={() => handlePreview(article.id)}
+                        className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100"
+                        disabled={previewLoading}
+                      >
+                        View
+                      </button>
                       {article.status === "reviewing" && (
                         <>
                           <button
@@ -289,6 +364,15 @@ export default function ArticlesPage() {
                             Reject
                           </button>
                         </>
+                      )}
+                      {(article.status === "rejected" || article.status === "drafting") && (
+                        <button
+                          onClick={() => handleDeleteArticle(article.id)}
+                          className="px-2 py-1 text-xs bg-gray-50 text-gray-500 rounded hover:bg-red-50 hover:text-red-600"
+                          title="Delete article"
+                        >
+                          🗑
+                        </button>
                       )}
                     </div>
                   </td>

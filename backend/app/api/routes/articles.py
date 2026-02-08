@@ -188,3 +188,17 @@ async def reject_article(
     article.updated_at = datetime.now(timezone.utc)
     await session.flush()
     return ArticleOut.model_validate(article)
+
+
+@router.delete("/{article_id}", status_code=200)
+async def delete_article(
+    article_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete an article by ID."""
+    article = await session.get(Article, article_id)
+    if article is None:
+        raise HTTPException(status_code=404, detail="Article not found")
+    await session.delete(article)
+    await session.commit()
+    return {"deleted": article_id}

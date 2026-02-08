@@ -100,6 +100,21 @@ export function rejectArticle(id: number): Promise<Article> {
   return apiFetch(`/articles/${id}/reject`, { method: "POST" });
 }
 
+export interface ArticleContent {
+  id: number;
+  title: string;
+  content_markdown: string | null;
+  content_html: string | null;
+}
+
+export function fetchArticleContent(id: number): Promise<ArticleContent> {
+  return apiFetch(`/articles/${id}/content`);
+}
+
+export function deleteArticle(id: number): Promise<{ deleted: number }> {
+  return apiFetch(`/articles/${id}`, { method: "DELETE" });
+}
+
 // ── Calendar ───────────────────────────────────────────────────────────────
 
 export interface CalendarEntry {
@@ -180,4 +195,8 @@ export function fetchPipelineRuns(): Promise<{
 
 export function deleteFailedRuns(): Promise<{ deleted: number }> {
   return apiFetch("/pipeline/runs/failed", { method: "DELETE" });
+}
+
+export function deletePipelineRun(id: number): Promise<{ deleted: number }> {
+  return apiFetch(`/pipeline/runs/${id}`, { method: "DELETE" });
 }
