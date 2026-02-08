@@ -16,6 +16,7 @@ from typing import Any
 import structlog
 
 from app.agents.base import AgentContext, AgentResult, BaseAgent
+from app.agents.json_utils import extract_json
 from app.config import settings
 
 logger = structlog.get_logger(__name__)
@@ -392,12 +393,13 @@ class EditorAgent(BaseAgent):
 
         response = await self._call_llm(
             [{"role": "user", "content": user_message}],
-            max_tokens=4096,
+            max_tokens=8192,
             temperature=0.3,  # low temperature for consistent scoring
         )
         raw_text = self._text_from_response(response)
+        truncated = response.stop_reason == "max_tokens"
 
-        return self._parse_evaluation_json(raw_text)
+        return self._parse_evaluation_json(raw_text, truncated=truncated)
 
     async def _generate_revision_instructions(
         self,
@@ -419,7 +421,7 @@ class EditorAgent(BaseAgent):
 
         response = await self._call_llm(
             [{"role": "user", "content": user_message}],
-            max_tokens=4096,
+            max_tokens=8192,
             temperature=0.4,
         )
         return self._text_from_response(response)
@@ -430,7 +432,7 @@ class EditorAgent(BaseAgent):
 
         response = await self._call_llm(
             [{"role": "user", "content": user_message}],
-            max_tokens=8192,
+            max_tokens=16384,
             temperature=0.25,  # very low -- preserve original voice
         )
         return self._text_from_response(response)
@@ -478,39 +480,14 @@ class EditorAgent(BaseAgent):
     # JSON parsing                                                        #
     # ------------------------------------------------------------------ #
 
-    def _parse_evaluation_json(self, raw_text: str) -> dict[str, Any] | None:
-        """Robustly extract the evaluation JSON from the LLM response.
-
-        Handles cases where the LLM wraps the JSON in markdown fences or
-        adds preamble/postamble text.
-        """
-        # Try direct parse first
+    def _parse_evaluation_json(self, raw_text: str, *, truncated: bool = False) -> dict[str, Any] | None:
+        """Robustly extract the evaluation JSON from the LLM response."""
         try:
-            return json.loads(raw_text)
-        except json.JSONDecodeError:
-            pass
-
-        # Try extracting from markdown code fences
-        fence_match = re.search(
-            r"```(?:json)?\s*\n?(.*?)\n?\s*```", raw_text, re.DOTALL
-        )
-        if fence_match:
-            try:
-                return json.loads(fence_match.group(1))
-            except json.JSONDecodeError:
-                pass
-
-        # Try finding the first { ... } block
-        brace_match = re.search(r"\{.*\}", raw_text, re.DOTALL)
-        if brace_match:
-            try:
-                return json.loads(brace_match.group(0))
-            except json.JSONDecodeError:
-                pass
-
-        self._log.error(
-            "editor_json_parse_failed",
-            raw_text_length=len(raw_text),
-            raw_text_preview=raw_text[:500],
-        )
-        return None
+            return extract_json(raw_text, allow_truncated=truncated)
+        except (ValueError, json.JSONDecodeError):
+            self._log.error(
+                "editor_json_parse_failed",
+                raw_text_length=len(raw_text),
+                raw_text_preview=raw_text[:500],
+            )
+            return None

@@ -14,6 +14,7 @@ from typing import Any
 import structlog
 
 from app.agents.base import AgentContext, AgentResult, BaseAgent
+from app.agents.json_utils import extract_json
 from app.config import settings
 
 logger = structlog.get_logger(__name__)
@@ -258,32 +259,27 @@ class PlannerAgent(BaseAgent):
 
         response = await self._call_llm(
             messages=[{"role": "user", "content": user_prompt}],
-            max_tokens=4096,
+            max_tokens=16384,
             temperature=0.4,
         )
 
         raw_text = self._text_from_response(response)
+        truncated = response.stop_reason == "max_tokens"
 
         # ---- 2. Parse the LLM JSON output ------------------------------------
         try:
-            output_data: dict[str, Any] = json.loads(raw_text)
-        except json.JSONDecodeError:
-            self._log.warning("json_parse_fallback", raw_length=len(raw_text))
-            try:
-                json_start = raw_text.index("{")
-                json_end = raw_text.rindex("}") + 1
-                output_data = json.loads(raw_text[json_start:json_end])
-            except (ValueError, json.JSONDecodeError) as parse_err:
-                elapsed = time.monotonic() - start
-                self._log.error("json_parse_failed", error=str(parse_err))
-                return AgentResult(
-                    success=False,
-                    output_data={"raw_response": raw_text},
-                    error_message=f"Failed to parse LLM output as JSON: {parse_err}",
-                    tokens_used=self._total_tokens,
-                    cost_usd=self._total_cost,
-                    execution_time_seconds=round(elapsed, 2),
-                )
+            output_data: dict[str, Any] = extract_json(raw_text, allow_truncated=truncated)
+        except (ValueError, json.JSONDecodeError) as parse_err:
+            elapsed = time.monotonic() - start
+            self._log.error("json_parse_failed", error=str(parse_err))
+            return AgentResult(
+                success=False,
+                output_data={"raw_response": raw_text[:2000]},
+                error_message=f"Failed to parse LLM output as JSON: {parse_err}",
+                tokens_used=self._total_tokens,
+                cost_usd=self._total_cost,
+                execution_time_seconds=round(elapsed, 2),
+            )
 
         # ---- 3. Validate outline structure -----------------------------------
         passed, reason = self._validate_outline(output_data)

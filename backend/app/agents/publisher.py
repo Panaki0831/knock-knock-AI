@@ -23,6 +23,7 @@ import httpx
 import structlog
 
 from app.agents.base import AgentContext, AgentResult, BaseAgent
+from app.agents.json_utils import extract_json
 from app.config import settings
 
 logger = structlog.get_logger(__name__)
@@ -146,7 +147,7 @@ class PublisherAgent(BaseAgent):
 
         response = await self._call_llm(
             messages=[{"role": "user", "content": user_prompt}],
-            max_tokens=8192,
+            max_tokens=16384,
             temperature=0.3,
         )
         raw_text = self._text_from_response(response)
@@ -247,16 +248,8 @@ class PublisherAgent(BaseAgent):
     @staticmethod
     def _parse_response(raw_text: str, platform: str) -> dict[str, Any]:
         """Best-effort parse of the LLM JSON response."""
-        cleaned = raw_text.strip()
-        if cleaned.startswith("```"):
-            first_newline = cleaned.index("\n")
-            cleaned = cleaned[first_newline + 1 :]
-        if cleaned.endswith("```"):
-            cleaned = cleaned[: -3]
-        cleaned = cleaned.strip()
-
         try:
-            data = json.loads(cleaned)
+            data = extract_json(raw_text, allow_truncated=True)
             return {
                 "formatted_content": str(data.get("formatted_content", "")),
                 "sns_posts": {
@@ -265,7 +258,7 @@ class PublisherAgent(BaseAgent):
                 },
                 "email_summary": str(data.get("email_summary", "")),
             }
-        except (json.JSONDecodeError, ValueError, AttributeError):
+        except (ValueError, json.JSONDecodeError, AttributeError):
             logger.warning(
                 "publisher_json_parse_failed",
                 raw_length=len(raw_text),

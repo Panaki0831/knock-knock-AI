@@ -20,6 +20,7 @@ from typing import Any
 import structlog
 
 from app.agents.base import AgentContext, AgentResult, BaseAgent
+from app.agents.json_utils import extract_json
 from app.config import settings
 
 logger = structlog.get_logger(__name__)
@@ -182,7 +183,7 @@ class LocalizerAgent(BaseAgent):
         # --- call LLM ---------------------------------------------------------
         response = await self._call_llm(
             messages=[{"role": "user", "content": user_prompt}],
-            max_tokens=8192,
+            max_tokens=16384,
             temperature=0.4,
         )
         raw_text = self._text_from_response(response)
@@ -263,30 +264,16 @@ class LocalizerAgent(BaseAgent):
 
     @staticmethod
     def _parse_response(raw_text: str, target_language: str) -> dict[str, Any]:
-        """Best-effort parse of the LLM JSON response.
-
-        Falls back to treating the whole response as the localized markdown if
-        JSON parsing fails, so the pipeline never hard-fails on a format issue.
-        """
-        # Strip markdown code-fence wrappers if the model added them.
-        cleaned = raw_text.strip()
-        if cleaned.startswith("```"):
-            # Remove opening fence (```json or ```)
-            first_newline = cleaned.index("\n")
-            cleaned = cleaned[first_newline + 1 :]
-        if cleaned.endswith("```"):
-            cleaned = cleaned[: -3]
-        cleaned = cleaned.strip()
-
+        """Best-effort parse of the LLM JSON response."""
         try:
-            data = json.loads(cleaned)
+            data = extract_json(raw_text, allow_truncated=True)
             return {
-                "localized_markdown": str(data.get("localized_markdown", cleaned)),
+                "localized_markdown": str(data.get("localized_markdown", raw_text)),
                 "target_language": str(data.get("target_language", target_language)),
                 "localization_notes": list(data.get("localization_notes", [])),
                 "adapted_references": list(data.get("adapted_references", [])),
             }
-        except (json.JSONDecodeError, ValueError):
+        except (ValueError, json.JSONDecodeError):
             logger.warning(
                 "localization_json_parse_failed",
                 raw_length=len(raw_text),

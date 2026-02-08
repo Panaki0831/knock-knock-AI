@@ -326,7 +326,7 @@ class WriterAgent(BaseAgent):
 
         response = await self._call_llm(
             [{"role": "user", "content": user_message}],
-            max_tokens=2048,
+            max_tokens=4096,
             temperature=0.75,
         )
         return self._text_from_response(response)
@@ -364,7 +364,7 @@ class WriterAgent(BaseAgent):
 
         response = await self._call_llm(
             [{"role": "user", "content": user_message}],
-            max_tokens=4096,
+            max_tokens=8192,
             temperature=0.72,
         )
         return self._text_from_response(response)
