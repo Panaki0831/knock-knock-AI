@@ -124,14 +124,11 @@ export default function ArticlesPage() {
                         {run.topic || "Untitled"}
                       </span>
                       <PipelineStatusBadge status={run.status} />
-                      {(run.status === "pending" || run.status === "running") &&
-                        run.current_step && (
-                          <span className="text-xs text-gray-400">
-                            Step: {run.current_step}
-                          </span>
-                        )}
                       {(run.status === "pending" || run.status === "running") && (
-                        <span className="inline-block w-4 h-4 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
+                        <StepProgressBar currentStep={run.current_step} />
+                      )}
+                      {(run.status === "pending" || run.status === "running") && (
+                        <span className="inline-block w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
                       )}
                     </div>
                     <div className="flex items-center gap-2">
@@ -342,6 +339,18 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+const STEP_LABELS: Record<string, string> = {
+  queued: "Queued",
+  research: "Research",
+  plan: "Planning",
+  write: "Writing",
+  edit: "Editing",
+  localize: "Localizing",
+  publish: "Publishing",
+};
+
+const STEP_ORDER = ["research", "plan", "write", "edit", "publish"];
+
 function PipelineStatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
     pending: "bg-blue-100 text-blue-700",
@@ -363,5 +372,40 @@ function PipelineStatusBadge({ status }: { status: string }) {
     >
       {labels[status] || status}
     </span>
+  );
+}
+
+function StepProgressBar({ currentStep }: { currentStep: string | null }) {
+  if (!currentStep || currentStep === "queued") return null;
+  const currentIdx = STEP_ORDER.indexOf(currentStep);
+  if (currentIdx < 0) return null;
+
+  return (
+    <div className="flex items-center gap-1">
+      {STEP_ORDER.map((step, idx) => (
+        <div key={step} className="flex items-center gap-1">
+          <div
+            className={`w-2 h-2 rounded-full ${
+              idx < currentIdx
+                ? "bg-green-500"
+                : idx === currentIdx
+                  ? "bg-yellow-500 animate-pulse"
+                  : "bg-gray-200"
+            }`}
+            title={STEP_LABELS[step] || step}
+          />
+          {idx < STEP_ORDER.length - 1 && (
+            <div
+              className={`w-3 h-0.5 ${
+                idx < currentIdx ? "bg-green-300" : "bg-gray-200"
+              }`}
+            />
+          )}
+        </div>
+      ))}
+      <span className="ml-1 text-xs text-gray-500">
+        {STEP_LABELS[currentStep] || currentStep}
+      </span>
+    </div>
   );
 }

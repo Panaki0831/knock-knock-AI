@@ -80,12 +80,18 @@ async def trigger_pipeline(
     try:
         from app.agents.base import AgentContext
 
+        async def _on_step_progress(step_name: str) -> None:
+            """Update the PipelineRun row with the current step."""
+            pipeline_run.current_step = step_name
+            pipeline_run.status = PipelineStatus.RUNNING
+            await session.commit()
+
         context = AgentContext(
             task_id=uuid.uuid4().hex,
             article_id=str(pipeline_run.id),
             input_data=orchestrator_input,
         )
-        result = await orchestrator.execute(context)
+        result = await orchestrator.execute(context, progress_callback=_on_step_progress)
 
         pipeline_run.steps_log = result.output_data.get("steps", [])
         pipeline_run.total_tokens_used = result.tokens_used

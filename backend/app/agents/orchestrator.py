@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from enum import Enum
 from typing import Any
 
@@ -153,7 +154,12 @@ class OrchestratorAgent(BaseAgent):
     def system_prompt(self) -> str:
         return _ORCHESTRATOR_SYSTEM_PROMPT
 
-    async def execute(self, context: AgentContext) -> AgentResult:
+    async def execute(
+        self,
+        context: AgentContext,
+        *,
+        progress_callback: Callable[[str], Awaitable[None]] | None = None,
+    ) -> AgentResult:
         """Execute the orchestrator as a regular agent step.
 
         In practice callers should prefer :pymeth:`run_pipeline` which accepts
@@ -171,6 +177,7 @@ class OrchestratorAgent(BaseAgent):
             calendar_entry,
             task_id=context.task_id,
             article_id=context.article_id,
+            progress_callback=progress_callback,
         )
         return AgentResult(
             success=pipeline_result["success"],
@@ -188,6 +195,7 @@ class OrchestratorAgent(BaseAgent):
         *,
         task_id: str | None = None,
         article_id: str | None = None,
+        progress_callback: Callable[[str], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
         """Orchestrate the full content pipeline for a single calendar entry.
 
@@ -225,6 +233,13 @@ class OrchestratorAgent(BaseAgent):
         pipeline_error: str | None = None
 
         for step in steps:
+            # Notify caller of step transition so it can update the DB.
+            if progress_callback is not None:
+                try:
+                    await progress_callback(step.value)
+                except Exception as cb_exc:
+                    log.warning("progress_callback_error", step=step.value, error=str(cb_exc))
+
             outcome = await self._run_step(
                 step=step,
                 task_id=task_id,
