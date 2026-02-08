@@ -84,9 +84,10 @@ class StepOutcome:
     def to_dict(self) -> dict[str, Any]:
         return {
             "step": self.step.value,
+            "status": "completed" if self.success else "failed",
             "success": self.success,
             "attempts": self.attempts,
-            "output_data": self.output_data,
+            "error": self.error_message,
             "error_message": self.error_message,
             "tokens_used": self.tokens_used,
             "cost_usd": round(self.cost_usd, 6),

@@ -20,11 +20,14 @@ logger = structlog.get_logger(__name__)
 async def trigger_pipeline(
     calendar_entry_id: int,
     session: AsyncSession,
+    *,
+    pipeline_run_id: int | None = None,
 ) -> PipelineRun:
     """Kick off the full content pipeline for a single calendar entry.
 
-    Creates a :class:`PipelineRun` record, delegates to the
-    :class:`OrchestratorAgent`, and persists the resulting article.
+    If ``pipeline_run_id`` is given, reuse the existing :class:`PipelineRun`
+    record (created by the API route as a placeholder).  Otherwise create a
+    new one.
     """
     # 1. Load calendar entry
     calendar_entry = await session.get(ContentCalendar, calendar_entry_id)
@@ -34,15 +37,23 @@ async def trigger_pipeline(
     log = logger.bind(calendar_entry_id=calendar_entry_id)
     log.info("pipeline_trigger", theme=calendar_entry.article_theme)
 
-    # 2. Create pipeline run record
-    pipeline_run = PipelineRun(
-        status=PipelineStatus.RUNNING,
-        current_step="research",
-        started_at=datetime.now(timezone.utc),
-        calendar_entry_id=calendar_entry_id,
-        topic=calendar_entry.article_theme,
-    )
-    session.add(pipeline_run)
+    # 2. Reuse existing pipeline run or create a new one
+    if pipeline_run_id is not None:
+        pipeline_run = await session.get(PipelineRun, pipeline_run_id)
+        if pipeline_run is None:
+            raise ValueError(f"PipelineRun {pipeline_run_id} not found")
+        pipeline_run.status = PipelineStatus.RUNNING
+        pipeline_run.current_step = "research"
+        pipeline_run.started_at = datetime.now(timezone.utc)
+    else:
+        pipeline_run = PipelineRun(
+            status=PipelineStatus.RUNNING,
+            current_step="research",
+            started_at=datetime.now(timezone.utc),
+            calendar_entry_id=calendar_entry_id,
+            topic=calendar_entry.article_theme,
+        )
+        session.add(pipeline_run)
     await session.flush()
 
     # 3. Update calendar entry status

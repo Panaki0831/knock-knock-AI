@@ -58,11 +58,11 @@ class PipelineListOut(BaseModel):
 # ── Background task helper ───────────────────────────────────────────────────
 
 
-async def _run_pipeline_background(calendar_entry_id: int) -> None:
+async def _run_pipeline_background(calendar_entry_id: int, run_id: int) -> None:
     """Run the pipeline in a background task with its own DB session."""
     async with async_session_factory() as session:
         try:
-            await trigger_pipeline(calendar_entry_id, session)
+            await trigger_pipeline(calendar_entry_id, session, pipeline_run_id=run_id)
         except Exception as exc:
             # Log but don't propagate -- background tasks should not raise.
             import structlog
@@ -70,6 +70,7 @@ async def _run_pipeline_background(calendar_entry_id: int) -> None:
             structlog.get_logger(__name__).error(
                 "background_pipeline_failed",
                 calendar_entry_id=calendar_entry_id,
+                run_id=run_id,
                 error=str(exc),
             )
 
@@ -106,7 +107,7 @@ async def trigger_pipeline_route(
     run_id = run.id
     await session.commit()
 
-    background_tasks.add_task(_run_pipeline_background, body.calendar_entry_id)
+    background_tasks.add_task(_run_pipeline_background, body.calendar_entry_id, run_id)
 
     return PipelineTriggerOut(
         run_id=run_id,

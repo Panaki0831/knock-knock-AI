@@ -33,6 +33,20 @@ def _run_migrations(sync_conn) -> None:
     _add_column_if_missing(sync_conn, "pipeline_runs", "topic", "VARCHAR(500)")
 
 
+def _cleanup_stale_runs(sync_conn) -> None:
+    """Mark abandoned pending/running pipeline runs as failed on startup."""
+    from sqlalchemy import text
+
+    sync_conn.execute(
+        text(
+            "UPDATE pipeline_runs SET status = 'failed', "
+            "error_message = 'Abandoned: server restarted before completion', "
+            "current_step = NULL "
+            "WHERE status IN ('pending', 'running')"
+        )
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown lifecycle."""
@@ -42,6 +56,8 @@ async def lifespan(app: FastAPI):
             await conn.run_sync(Base.metadata.create_all)
             # Migrate: add columns that create_all doesn't add to existing tables
             await conn.run_sync(_run_migrations)
+            # Clean up abandoned pipeline runs from previous restarts
+            await conn.run_sync(_cleanup_stale_runs)
     yield
     # Shutdown: dispose of engine
     await engine.dispose()
