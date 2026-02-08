@@ -54,16 +54,17 @@ class Settings(BaseSettings):
 
     # --- Agent Model Configuration ---
     # Use valid Anthropic model IDs. See https://docs.anthropic.com/en/docs/models
-    default_orchestrator_model: str = "claude-sonnet-4-5-20250929"
+    # Haiku is used for research/planner/orchestrator for speed; Sonnet for quality-critical writer/editor.
+    default_orchestrator_model: str = "claude-haiku-4-5-20251001"
     default_writer_model: str = "claude-sonnet-4-5-20250929"
-    default_researcher_model: str = "claude-sonnet-4-5-20250929"
-    default_planner_model: str = "claude-sonnet-4-5-20250929"
+    default_researcher_model: str = "claude-haiku-4-5-20251001"
+    default_planner_model: str = "claude-haiku-4-5-20251001"
     default_editor_model: str = "claude-sonnet-4-5-20250929"
     default_localizer_model: str = "claude-sonnet-4-5-20250929"
     default_publisher_model: str = "claude-haiku-4-5-20251001"
 
     # --- Pipeline ---
-    max_retry_count: int = Field(default=3, description="Max retries per quality gate")
+    max_retry_count: int = Field(default=2, description="Max retries per quality gate")
     article_generation_timeout: int = Field(default=1800, description="Timeout in seconds")
 
     @property

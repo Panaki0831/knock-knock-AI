@@ -45,6 +45,12 @@ Your responsibilities:
 - Structure your outline so that TOFU (awareness) content is broader and \
   educational, MOFU (consideration) content addresses specific problems and \
   comparisons, and BOFU (decision) content drives conversion.
+- IMPORTANT: Keep the outline concise with exactly 5 sections (H2 headings). \
+  Consolidate related topics into fewer, richer sections. Do NOT exceed 6 \
+  top-level sections. Subsections (H3) within an H2 are fine but keep them \
+  to 1-2 per section.
+- Target a total article length of 2000-3000 words (roughly 400-500 words \
+  per section).
 
 Output format (strict JSON):
 {

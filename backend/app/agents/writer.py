@@ -326,7 +326,7 @@ class WriterAgent(BaseAgent):
 
         response = await self._call_llm(
             [{"role": "user", "content": user_message}],
-            max_tokens=4096,
+            max_tokens=2048,
             temperature=0.75,
         )
         return self._text_from_response(response)
@@ -345,12 +345,12 @@ class WriterAgent(BaseAgent):
         # Truncate preceding content to keep within context limits while
         # preserving the most recent context (last ~3000 chars) plus the
         # very beginning (~1000 chars) for title/intro continuity.
-        preceding_excerpt = self._smart_truncate(preceding_content, max_chars=8000)
-        research_excerpt = self._smart_truncate(research_report, max_chars=6000)
+        preceding_excerpt = self._smart_truncate(preceding_content, max_chars=4000)
+        research_excerpt = self._smart_truncate(research_report, max_chars=4000)
 
-        target_word_count = "300-500"
+        target_word_count = "300-400"
         if is_last_section:
-            target_word_count = "250-400 (include a compelling conclusion)"
+            target_word_count = "200-350 (include a compelling conclusion)"
 
         lang_instruction = self._language_instruction(target_language)
 
@@ -364,7 +364,7 @@ class WriterAgent(BaseAgent):
 
         response = await self._call_llm(
             [{"role": "user", "content": user_message}],
-            max_tokens=8192,
+            max_tokens=4096,
             temperature=0.72,
         )
         return self._text_from_response(response)

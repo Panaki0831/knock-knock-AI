@@ -393,7 +393,7 @@ class EditorAgent(BaseAgent):
 
         response = await self._call_llm(
             [{"role": "user", "content": user_message}],
-            max_tokens=8192,
+            max_tokens=4096,
             temperature=0.3,  # low temperature for consistent scoring
         )
         raw_text = self._text_from_response(response)
@@ -421,7 +421,7 @@ class EditorAgent(BaseAgent):
 
         response = await self._call_llm(
             [{"role": "user", "content": user_message}],
-            max_tokens=8192,
+            max_tokens=4096,
             temperature=0.4,
         )
         return self._text_from_response(response)
@@ -432,7 +432,7 @@ class EditorAgent(BaseAgent):
 
         response = await self._call_llm(
             [{"role": "user", "content": user_message}],
-            max_tokens=16384,
+            max_tokens=8192,
             temperature=0.25,  # very low -- preserve original voice
         )
         return self._text_from_response(response)

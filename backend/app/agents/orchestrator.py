@@ -52,6 +52,13 @@ _DEFAULT_STEPS: list[PipelineStep] = [
     PipelineStep.PUBLISH,
 ]
 
+# Steps that require an LLM quality-gate evaluation between attempts.
+# Most steps are auto-approved to reduce latency. The Editor agent already
+# performs thorough quality scoring for the article content.
+_GATED_STEPS: frozenset[PipelineStep] = frozenset({
+    PipelineStep.RESEARCH,
+})
+
 
 # ---------------------------------------------------------------------------
 # Step result tracking
@@ -363,13 +370,19 @@ class OrchestratorAgent(BaseAgent):
                 outcome.error_message = result.error_message
                 continue  # retry
 
-            # --- quality gate -----------------------------------------------------
-            gate_passed = await self._quality_gate(
-                step=step,
-                step_output=result.output_data,
-                cumulative_data=cumulative_data,
-                log=log,
-            )
+            # --- quality gate (only for research step; editor handles article QA) ---
+            # Skip the LLM-based quality gate for most steps to cut latency.
+            # The editor agent already performs thorough quality scoring.
+            if step in _GATED_STEPS:
+                gate_passed = await self._quality_gate(
+                    step=step,
+                    step_output=result.output_data,
+                    cumulative_data=cumulative_data,
+                    log=log,
+                )
+            else:
+                gate_passed = True
+
             if gate_passed:
                 outcome.success = True
                 outcome.output_data = result.output_data
