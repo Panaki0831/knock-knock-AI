@@ -54,6 +54,42 @@ everyone -- from startup founders to seasoned marketers.
 - Never claim capabilities we do not actually have
 """
 
+_CTA_GUIDELINES = """\
+## knock knock AI CTA (Call-to-Action) Strategy
+
+This article is created to **promote knock knock AI** and drive traffic to \
+our product. You MUST naturally weave CTA links into the article using the \
+following rules:
+
+**CTA URL**: https://www.knock-knock-ai.com/
+
+**Placement rules** (MANDATORY):
+1. **Introduction CTA**: In the introduction, mention knock knock AI as a \
+   solution and include ONE clickable link. Example (Japanese): \
+   「そんな課題を解決するのが[knock knock AI](https://www.knock-knock-ai.com/)です。」
+2. **Mid-article CTAs**: Insert a CTA link in **at least 2 body sections** \
+   where it fits naturally in context. Do NOT force it -- weave it into the \
+   argument. Examples:
+   - 「[knock knock AI](https://www.knock-knock-ai.com/)なら、この作業を自動化できます」
+   - 「詳しくは[knock knock AI公式サイト](https://www.knock-knock-ai.com/)をご覧ください」
+   - 「実際に[knock knock AI](https://www.knock-knock-ai.com/)を導入した企業では〜」
+3. **Closing CTA**: The final section MUST end with a strong CTA block -- \
+   a brief paragraph inviting the reader to visit knock knock AI with a \
+   clickable link. Example:
+   「AIを活用したコンテンツマーケティングに興味がある方は、ぜひ\
+   [knock knock AI](https://www.knock-knock-ai.com/)をお試しください。」
+
+**CTA style rules**:
+- Links MUST be Markdown format: [表示テキスト](https://www.knock-knock-ai.com/)
+- The anchor text should be natural and varied -- do NOT always use the same \
+  phrasing. Use different expressions each time (e.g., "knock knock AI", \
+  "knock knock AI公式サイト", "こちら", "knock knock AIの詳細").
+- CTAs must feel like a natural part of the article flow, NOT like an \
+  advertisement. Tie knock knock AI's value to the specific topic being \
+  discussed in that section.
+- Position knock knock AI as the expert/solution provider for the topic.
+"""
+
 _FIVE_QUALITY_PRINCIPLES = """\
 You MUST internalise and apply the following five quality principles in \
 every sentence you write.  These are non-negotiable.
@@ -124,6 +160,7 @@ You are now writing **Section {section_number}** of the article.
 - End with a natural bridge sentence that leads into the next section \
   (unless this is the final section, in which case write a compelling \
   conclusion paragraph).
+- {cta_instruction}
 - Output ONLY the Markdown for this section -- no meta-commentary.
 """
 
@@ -156,7 +193,11 @@ class WriterAgent(BaseAgent):
             "content-marketing automation platform.  Your job is to produce articles "
             "that are indistinguishable from the best human-written content: engaging, "
             "well-researched, and optimised for both readers and search engines.\n\n"
+            "CRITICAL: Every article you write serves a dual purpose -- educating the "
+            "reader AND promoting knock knock AI as the go-to solution.  You must "
+            "naturally position knock knock AI throughout the article.\n\n"
             f"{_BRAND_VOICE_GUIDELINES}\n\n"
+            f"{_CTA_GUIDELINES}\n\n"
             f"{_FIVE_QUALITY_PRINCIPLES}\n\n"
             "IMPORTANT: Output raw Markdown only.  Never wrap your output in "
             "```markdown``` fences.  Never include meta-commentary about what you "
@@ -257,6 +298,7 @@ class WriterAgent(BaseAgent):
                 research_report=research_report,
                 target_language=target_language,
                 is_last_section=(idx == len(sections)),
+                total_sections=len(sections),
             )
             generated_parts.append(section_md)
 
@@ -317,6 +359,10 @@ class WriterAgent(BaseAgent):
             "following article.  The introduction should hook the reader, establish "
             "credibility, and preview what the article will cover.  Aim for 150-250 "
             "words.\n\n"
+            "IMPORTANT: Include ONE natural CTA link to knock knock AI "
+            "(https://www.knock-knock-ai.com/) in the introduction. Position "
+            "knock knock AI as the solution/expert for this topic. Use Markdown "
+            "link format: [knock knock AI](https://www.knock-knock-ai.com/)\n\n"
             f"## Full Article Outline\n{outline}\n\n"
             f"## Research Report\n{research_report}\n\n"
             f"{lang_instruction}"
@@ -340,6 +386,7 @@ class WriterAgent(BaseAgent):
         research_report: str,
         target_language: str,
         is_last_section: bool,
+        total_sections: int = 0,
     ) -> str:
         """Generate a single body section of the article."""
         # Truncate preceding content to keep within context limits while
@@ -352,6 +399,11 @@ class WriterAgent(BaseAgent):
         if is_last_section:
             target_word_count = "200-350 (include a compelling conclusion)"
 
+        # Determine CTA instruction based on section position
+        cta_instruction = self._get_section_cta_instruction(
+            section_number, total_sections or section_number, is_last_section
+        )
+
         lang_instruction = self._language_instruction(target_language)
 
         user_message = _SECTION_PROMPT_TEMPLATE.format(
@@ -360,6 +412,7 @@ class WriterAgent(BaseAgent):
             preceding_content=preceding_excerpt,
             research_excerpt=research_excerpt,
             target_word_count=target_word_count,
+            cta_instruction=cta_instruction,
         ) + f"\n\n{lang_instruction}"
 
         response = await self._call_llm(
@@ -488,4 +541,35 @@ class WriterAgent(BaseAgent):
         return instructions.get(
             target_language,
             f"Write the entire output in the language with ISO code '{target_language}'.",
+        )
+
+    @staticmethod
+    def _get_section_cta_instruction(
+        section_number: int, total_sections: int, is_last_section: bool
+    ) -> str:
+        """Return a CTA instruction tailored to the section's position."""
+        if is_last_section:
+            return (
+                "MANDATORY: This is the final section. End with a strong CTA "
+                "paragraph that invites readers to try knock knock AI. Include "
+                "a clickable Markdown link: "
+                "[knock knock AI](https://www.knock-knock-ai.com/). "
+                "Make it feel like a natural conclusion, not an ad."
+            )
+
+        # Insert CTAs in roughly the middle sections (e.g., sections 2 and 4
+        # out of 6, or section 2 out of 3).  For short articles, every other
+        # section gets a CTA.
+        mid_point = max(1, total_sections // 3)
+        if section_number % mid_point == 0 or section_number == 2:
+            return (
+                "Include ONE natural CTA link to knock knock AI in this section. "
+                "Use Markdown format: [表示テキスト](https://www.knock-knock-ai.com/). "
+                "Tie it to the specific topic of this section -- position knock knock AI "
+                "as a solution or resource. Vary the anchor text from previous CTAs."
+            )
+
+        return (
+            "No CTA link required in this section, but you may reference "
+            "knock knock AI naturally if it fits the context."
         )
