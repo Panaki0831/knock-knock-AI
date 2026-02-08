@@ -4,11 +4,15 @@ This agent sits at the beginning of the content pipeline.  It uses the Tavily
 web-search API to collect recent, high-quality sources and then asks the LLM to
 synthesise them into a structured research report that downstream agents
 (Planner, Writer, ...) can consume.
+
+When Tavily is not configured or all searches fail, the agent falls back to
+the LLM's own knowledge to produce the research report.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any
 
@@ -26,6 +30,9 @@ logger = structlog.get_logger(__name__)
 
 _MIN_SOURCES = 5
 _MIN_STATISTICS = 3
+# Lower thresholds when no web search data is available
+_MIN_SOURCES_LLM_ONLY = 0
+_MIN_STATISTICS_LLM_ONLY = 1
 
 RESEARCHER_SYSTEM_PROMPT = """\
 You are an expert real-estate and PropTech research analyst working for \
@@ -33,11 +40,13 @@ knock knock AI, a content-marketing automation platform focused on the \
 Japanese real-estate market.
 
 Your responsibilities:
-- Analyse raw web-search results and extract the most relevant facts, \
-  statistics, market trends, and competitor moves.
+- Analyse raw web-search results (if provided) and extract the most relevant \
+  facts, statistics, market trends, and competitor moves.
+- If no web-search results are provided, use your own knowledge to produce \
+  a comprehensive research report.
 - Produce a well-structured research report in **Markdown** that a content \
   planner and writer can use directly.
-- Always cite your sources with URLs.
+- Always cite your sources with URLs when available.
 - Separate hard data (numbers, percentages, dates) from qualitative \
   observations.
 - Highlight information that is especially useful for SEO-driven blog \
@@ -46,18 +55,17 @@ Your responsibilities:
 - When information is uncertain or conflicting, note the discrepancy rather \
   than guessing.
 
-Output format (strict JSON):
+You MUST respond with ONLY a JSON object (no markdown fences, no preamble, \
+no commentary before or after):
 {
   "research_report": "<Markdown string>",
   "key_statistics": [
-    {"stat": "<description>", "source": "<url>", "date": "<YYYY-MM-DD or approximate>"}
+    {"stat": "<description>", "source": "<url or 'LLM knowledge'>", "date": "<YYYY-MM-DD or approximate>"}
   ],
   "competitor_insights": "<Markdown string>",
   "market_data": "<Markdown string>",
   "sources": ["<url1>", "<url2>", ...]
 }
-
-Return ONLY valid JSON -- no commentary outside the JSON block.
 """
 
 # ---------------------------------------------------------------------------
@@ -74,11 +82,7 @@ async def _tavily_search(
     search_depth: str = "advanced",
     include_raw_content: bool = False,
 ) -> list[dict[str, Any]]:
-    """Execute a single Tavily web-search request.
-
-    Returns a list of result dicts, each containing at minimum the keys
-    ``title``, ``url``, ``content``, and ``score``.
-    """
+    """Execute a single Tavily web-search request."""
     log = logger.bind(component="tavily_search")
     payload: dict[str, Any] = {
         "api_key": settings.tavily_api_key,
@@ -107,19 +111,64 @@ async def _tavily_search(
 
 
 # ---------------------------------------------------------------------------
+# JSON extraction helper
+# ---------------------------------------------------------------------------
+
+def _extract_json(text: str) -> dict[str, Any]:
+    """Best-effort extraction of a JSON object from LLM text.
+
+    Handles:
+    - Pure JSON
+    - JSON wrapped in ```json ... ``` fences
+    - JSON preceded/followed by commentary text
+    """
+    text = text.strip()
+
+    # 1. Try direct parse
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # 2. Try to extract from markdown code fences
+    fence_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
+    if fence_match:
+        try:
+            return json.loads(fence_match.group(1).strip())
+        except json.JSONDecodeError:
+            pass
+
+    # 3. Try to find the outermost { ... } block
+    brace_match = re.search(r"\{", text)
+    if brace_match:
+        start_idx = brace_match.start()
+        # Find the matching closing brace by counting depth
+        depth = 0
+        end_idx = start_idx
+        for i in range(start_idx, len(text)):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    end_idx = i + 1
+                    break
+        if end_idx > start_idx:
+            try:
+                return json.loads(text[start_idx:end_idx])
+            except json.JSONDecodeError:
+                pass
+
+    raise ValueError(f"No valid JSON found in LLM response ({len(text)} chars)")
+
+
+# ---------------------------------------------------------------------------
 # Researcher agent
 # ---------------------------------------------------------------------------
 
 
 class ResearcherAgent(BaseAgent):
-    """Collects market data, statistics, competitor info, and latest news.
-
-    The agent performs several Tavily searches derived from the article theme
-    and target keywords, then asks the LLM to synthesise the raw results into
-    a structured JSON report.
-    """
-
-    # --- BaseAgent interface --------------------------------------------------
+    """Collects market data, statistics, competitor info, and latest news."""
 
     @property
     def agent_name(self) -> str:
@@ -133,33 +182,21 @@ class ResearcherAgent(BaseAgent):
     def system_prompt(self) -> str:
         return RESEARCHER_SYSTEM_PROMPT
 
-    # --- internal helpers -----------------------------------------------------
-
     def _build_search_queries(
         self,
         article_theme: str,
         target_keywords: list[str],
         target_market: str,
     ) -> list[str]:
-        """Derive a set of search queries from the pipeline inputs.
-
-        We generate several complementary queries so the final report covers
-        general market data, statistics, competitor activity, and recent news.
-        """
         keyword_str = ", ".join(target_keywords) if target_keywords else article_theme
 
         queries = [
-            # Broad thematic search
             f"{article_theme} {target_market} latest trends",
-            # Statistics / data-focused
             f"{keyword_str} statistics data {target_market}",
-            # Competitor / industry players
             f"{article_theme} competitors market share {target_market}",
-            # Recent news
             f"{article_theme} {target_market} news 2024 2025",
         ]
 
-        # Add a keyword-specific query if keywords differ from the theme
         if target_keywords:
             queries.append(f"{' '.join(target_keywords[:3])} {target_market} insights")
 
@@ -167,7 +204,6 @@ class ResearcherAgent(BaseAgent):
 
     @staticmethod
     def _format_search_results(all_results: list[dict[str, Any]]) -> str:
-        """Collapse Tavily results into a single text block for the LLM."""
         parts: list[str] = []
         seen_urls: set[str] = set()
 
@@ -189,53 +225,36 @@ class ResearcherAgent(BaseAgent):
 
         return "\n".join(parts)
 
-    # --- quality gate ---------------------------------------------------------
-
     @staticmethod
-    def _check_data_sufficiency(output_data: dict[str, Any]) -> tuple[bool, str]:
-        """Verify that the research output meets minimum thresholds.
-
-        Requirements:
-        * At least ``_MIN_SOURCES`` unique source URLs.
-        * At least ``_MIN_STATISTICS`` entries in ``key_statistics``.
-
-        Returns:
-            ``(passed, reason)`` where *reason* is an empty string on success.
-        """
+    def _check_data_sufficiency(
+        output_data: dict[str, Any],
+        *,
+        llm_only: bool = False,
+    ) -> tuple[bool, str]:
         sources = output_data.get("sources", [])
         statistics = output_data.get("key_statistics", [])
 
+        min_src = _MIN_SOURCES_LLM_ONLY if llm_only else _MIN_SOURCES
+        min_stat = _MIN_STATISTICS_LLM_ONLY if llm_only else _MIN_STATISTICS
+
         issues: list[str] = []
-        if len(sources) < _MIN_SOURCES:
+        if len(sources) < min_src:
             issues.append(
-                f"Insufficient sources: found {len(sources)}, need >= {_MIN_SOURCES}"
+                f"Insufficient sources: found {len(sources)}, need >= {min_src}"
             )
-        if len(statistics) < _MIN_STATISTICS:
+        if len(statistics) < min_stat:
             issues.append(
-                f"Insufficient statistics: found {len(statistics)}, need >= {_MIN_STATISTICS}"
+                f"Insufficient statistics: found {len(statistics)}, need >= {min_stat}"
             )
 
         if issues:
             return False, "; ".join(issues)
         return True, ""
 
-    # --- execute --------------------------------------------------------------
-
     async def execute(self, context: AgentContext) -> AgentResult:
-        """Run the full research cycle.
-
-        Expected keys in ``context.input_data``:
-
-        * ``article_theme`` (str) -- The central topic of the article.
-        * ``target_keywords`` (list[str]) -- SEO keywords to research.
-        * ``target_market`` (str) -- Geographic / demographic market scope.
-        """
         self._reset_token_tracking()
         start = time.monotonic()
 
-        # The orchestrator passes cumulative_data which nests the calendar
-        # entry under the "calendar_entry" key.  Fall back to top-level keys
-        # for standalone usage.
         cal = context.input_data.get("calendar_entry", {})
         article_theme: str = (
             cal.get("topic", "")
@@ -257,44 +276,56 @@ class ResearcherAgent(BaseAgent):
             target_market=target_market,
         )
 
-        # ---- 1. Web search via Tavily ----------------------------------------
-        queries = self._build_search_queries(article_theme, target_keywords, target_market)
+        # ---- 1. Web search via Tavily (optional) --------------------------------
+        llm_only = False
         all_search_results: list[dict[str, Any]] = []
 
-        for query in queries:
-            try:
-                results = await _tavily_search(query, max_results=8)
-                all_search_results.extend(results)
-            except httpx.HTTPStatusError as exc:
-                self._log.warning(
-                    "tavily_search_failed",
-                    query=query,
-                    status_code=exc.response.status_code,
-                    detail=exc.response.text[:500],
-                )
-            except httpx.RequestError as exc:
-                self._log.warning("tavily_request_error", query=query, error=str(exc))
+        if settings.tavily_api_key:
+            queries = self._build_search_queries(article_theme, target_keywords, target_market)
+            for query in queries:
+                try:
+                    results = await _tavily_search(query, max_results=8)
+                    all_search_results.extend(results)
+                except httpx.HTTPStatusError as exc:
+                    self._log.warning(
+                        "tavily_search_failed",
+                        query=query,
+                        status_code=exc.response.status_code,
+                        detail=exc.response.text[:500],
+                    )
+                except (httpx.RequestError, Exception) as exc:
+                    self._log.warning("tavily_request_error", query=query, error=str(exc))
+        else:
+            self._log.info("tavily_not_configured", msg="Falling back to LLM knowledge")
 
         if not all_search_results:
-            elapsed = time.monotonic() - start
-            self._log.error("no_search_results")
-            return AgentResult(
-                success=False,
-                error_message="All Tavily searches failed -- no raw data to synthesise.",
-                execution_time_seconds=round(elapsed, 2),
+            llm_only = True
+            self._log.info("using_llm_knowledge_only")
+
+        # ---- 2. LLM synthesis ----------------------------------------------------
+        if llm_only:
+            user_prompt = (
+                f"Article theme: {article_theme}\n"
+                f"Target keywords: {', '.join(target_keywords)}\n"
+                f"Target market: {target_market}\n\n"
+                f"No web search results are available. Use your own knowledge to "
+                f"produce a comprehensive research report about this topic. "
+                f"Include relevant statistics, market trends, and competitor insights "
+                f"based on your training data. For sources, use 'LLM knowledge' where "
+                f"you cannot provide a specific URL.\n\n"
+                f"Respond with ONLY a JSON object (no markdown fences)."
             )
-
-        formatted_results = self._format_search_results(all_search_results)
-
-        # ---- 2. LLM synthesis ------------------------------------------------
-        user_prompt = (
-            f"Article theme: {article_theme}\n"
-            f"Target keywords: {', '.join(target_keywords)}\n"
-            f"Target market: {target_market}\n\n"
-            f"Below are the raw web-search results.  Analyse them and produce "
-            f"the JSON output described in your system instructions.\n\n"
-            f"{formatted_results}"
-        )
+        else:
+            formatted_results = self._format_search_results(all_search_results)
+            user_prompt = (
+                f"Article theme: {article_theme}\n"
+                f"Target keywords: {', '.join(target_keywords)}\n"
+                f"Target market: {target_market}\n\n"
+                f"Below are the raw web-search results. Analyse them and produce "
+                f"the JSON output described in your system instructions.\n\n"
+                f"Respond with ONLY a JSON object (no markdown fences).\n\n"
+                f"{formatted_results}"
+            )
 
         response = await self._call_llm(
             messages=[{"role": "user", "content": user_prompt}],
@@ -304,30 +335,27 @@ class ResearcherAgent(BaseAgent):
 
         raw_text = self._text_from_response(response)
 
-        # ---- 3. Parse the LLM JSON output ------------------------------------
+        # ---- 3. Parse the LLM JSON output ----------------------------------------
         try:
-            output_data: dict[str, Any] = json.loads(raw_text)
-        except json.JSONDecodeError:
-            # Attempt to extract a JSON block from markdown fences
-            self._log.warning("json_parse_fallback", raw_length=len(raw_text))
-            try:
-                json_start = raw_text.index("{")
-                json_end = raw_text.rindex("}") + 1
-                output_data = json.loads(raw_text[json_start:json_end])
-            except (ValueError, json.JSONDecodeError) as parse_err:
-                elapsed = time.monotonic() - start
-                self._log.error("json_parse_failed", error=str(parse_err))
-                return AgentResult(
-                    success=False,
-                    output_data={"raw_response": raw_text},
-                    error_message=f"Failed to parse LLM output as JSON: {parse_err}",
-                    tokens_used=self._total_tokens,
-                    cost_usd=self._total_cost,
-                    execution_time_seconds=round(elapsed, 2),
-                )
+            output_data = _extract_json(raw_text)
+        except (ValueError, json.JSONDecodeError) as parse_err:
+            elapsed = time.monotonic() - start
+            self._log.error(
+                "json_parse_failed",
+                error=str(parse_err),
+                raw_text_preview=raw_text[:500],
+            )
+            return AgentResult(
+                success=False,
+                output_data={"raw_response": raw_text[:2000]},
+                error_message=f"Failed to parse LLM output as JSON: {parse_err}",
+                tokens_used=self._total_tokens,
+                cost_usd=self._total_cost,
+                execution_time_seconds=round(time.monotonic() - start, 2),
+            )
 
-        # ---- 4. Quality gate: data sufficiency -------------------------------
-        passed, reason = self._check_data_sufficiency(output_data)
+        # ---- 4. Quality gate: data sufficiency -----------------------------------
+        passed, reason = self._check_data_sufficiency(output_data, llm_only=llm_only)
 
         elapsed = time.monotonic() - start
 
@@ -346,6 +374,7 @@ class ResearcherAgent(BaseAgent):
             "researcher_execute_complete",
             source_count=len(output_data.get("sources", [])),
             stat_count=len(output_data.get("key_statistics", [])),
+            llm_only=llm_only,
             elapsed_seconds=round(elapsed, 2),
         )
 
