@@ -17,8 +17,11 @@ export default function ArticlesPage() {
   const [page, setPage] = useState(1);
   const [expandedRunId, setExpandedRunId] = useState<number | null>(null);
 
+  // "generating" and "failed" are pipeline-run filters, not article statuses
+  const isPipelineFilter = statusFilter === "generating" || statusFilter === "failed";
+
   const load = () => {
-    fetchArticles({ page, status: statusFilter || undefined })
+    fetchArticles({ page, status: isPipelineFilter ? undefined : statusFilter || undefined })
       .then(setData)
       .catch((e) => setError(e.message));
 
