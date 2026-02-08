@@ -32,6 +32,10 @@ class PipelineRun(Base):
     article_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("articles.id", ondelete="SET NULL"), nullable=True
     )
+    calendar_entry_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("content_calendar.id", ondelete="SET NULL"), nullable=True
+    )
+    topic: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     status: Mapped[PipelineStatus] = mapped_column(
         Enum(PipelineStatus, name="pipeline_status", values_callable=lambda e: [m.value for m in e]),

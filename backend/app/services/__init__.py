@@ -39,6 +39,8 @@ async def trigger_pipeline(
         status=PipelineStatus.RUNNING,
         current_step="research",
         started_at=datetime.now(timezone.utc),
+        calendar_entry_id=calendar_entry_id,
+        topic=calendar_entry.article_theme,
     )
     session.add(pipeline_run)
     await session.flush()

@@ -149,8 +149,11 @@ export function createCalendarEntry(
 export interface PipelineRun {
   id: number;
   article_id: number | null;
+  calendar_entry_id: number | null;
+  topic: string | null;
   status: string;
   current_step: string | null;
+  steps_log: Record<string, any>[] | null;
   error_message: string | null;
   started_at: string | null;
   completed_at: string | null;

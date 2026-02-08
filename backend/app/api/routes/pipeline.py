@@ -34,6 +34,8 @@ class PipelineTriggerOut(BaseModel):
 class PipelineRunOut(BaseModel):
     id: int
     article_id: int | None = None
+    calendar_entry_id: int | None = None
+    topic: str | None = None
     status: str
     current_step: str | None = None
     steps_log: list[dict[str, Any]] | None = None
@@ -96,6 +98,8 @@ async def trigger_pipeline_route(
     run = PipelineRun(
         status=PipelineStatus.PENDING,
         current_step="queued",
+        calendar_entry_id=body.calendar_entry_id,
+        topic=entry.article_theme,
     )
     session.add(run)
     await session.flush()
