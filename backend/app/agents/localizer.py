@@ -131,10 +131,16 @@ class LocalizerAgent(BaseAgent):
         start = time.monotonic()
         log = self._log.bind(task_id=context.task_id)
 
-        # --- unpack & validate ------------------------------------------------
+        # --- unpack & validate from orchestrator cumulative_data ---------------
         data = context.input_data
-        article_markdown: str = data.get("article_markdown", "")
-        source_language: str = data.get("source_language", "ja")
+        cal = data.get("calendar_entry", {})
+        edit_step = data.get("edit", {})
+
+        article_markdown: str = (
+            edit_step.get("edited_markdown", "")
+            or data.get("article_markdown", "")
+        )
+        source_language: str = cal.get("language", data.get("source_language", "ja"))
         target_language: str = data.get("target_language", "en")
         target_market: str = data.get("target_market", "")
 

@@ -89,11 +89,26 @@ class PublisherAgent(BaseAgent):
         start = time.monotonic()
         log = self._log.bind(task_id=context.task_id)
 
-        # --- unpack & validate ------------------------------------------------
+        # --- unpack & validate from orchestrator cumulative_data ---------------
         data = context.input_data
-        article_markdown: str = data.get("article_markdown", "")
-        target_platform: str = data.get("target_platform", "").lower()
-        article_metadata: dict[str, Any] = data.get("article_metadata", {})
+        cal = data.get("calendar_entry", {})
+        edit_step = data.get("edit", {})
+        localize_step = data.get("localize", {})
+        plan_step = data.get("plan", {})
+
+        article_markdown: str = (
+            localize_step.get("localized_markdown", "")
+            or edit_step.get("edited_markdown", "")
+            or data.get("article_markdown", "")
+        )
+        target_platform: str = (
+            cal.get("target_platforms", [""])[0] if cal.get("target_platforms") else
+            cal.get("target_platform", data.get("target_platform", ""))
+        ).lower()
+        article_metadata: dict[str, Any] = data.get("article_metadata", {
+            "title": plan_step.get("outline", {}).get("h1", cal.get("topic", "Untitled")),
+            "tags": cal.get("target_keywords", []),
+        })
 
         if not article_markdown.strip():
             return AgentResult(

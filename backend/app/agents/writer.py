@@ -192,11 +192,28 @@ class WriterAgent(BaseAgent):
 
         self._log.info("writer_execute_start", task_id=context.task_id)
 
-        # ----- extract inputs ------------------------------------------------
-        outline: str = context.input_data.get("outline", "")
-        research_report: str = context.input_data.get("research_report", "")
+        # ----- extract inputs from orchestrator cumulative_data ---------------
+        cal = context.input_data.get("calendar_entry", {})
+        plan_step = context.input_data.get("plan", {})
+        research_step = context.input_data.get("research", {})
+
+        # The planner output contains a structured outline JSON; convert to
+        # readable Markdown for the writer prompt.
+        outline_data = plan_step.get("outline", {})
+        if isinstance(outline_data, dict) and outline_data.get("h1"):
+            outline = self._outline_to_markdown(outline_data)
+        else:
+            outline = context.input_data.get("outline", "")
+
+        research_report: str = (
+            research_step.get("research_report", "")
+            or context.input_data.get("research_report", "")
+        )
         brand_voice_extra: str = context.input_data.get("brand_voice_guidelines", "")
-        target_language: str = context.input_data.get("target_language", "ja")
+        target_language: str = (
+            cal.get("language", "")
+            or context.input_data.get("target_language", "ja")
+        )
 
         if not outline:
             return AgentResult(
@@ -351,6 +368,45 @@ class WriterAgent(BaseAgent):
             temperature=0.72,
         )
         return self._text_from_response(response)
+
+    # ------------------------------------------------------------------ #
+    # Outline conversion                                                  #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _outline_to_markdown(outline_data: dict) -> str:
+        """Convert a structured planner JSON outline to Markdown."""
+        lines: list[str] = []
+        h1 = outline_data.get("h1", "Untitled")
+        lines.append(f"# {h1}\n")
+
+        for section in outline_data.get("sections", []):
+            heading = section.get("heading", "")
+            level = section.get("heading_level", 2)
+            prefix = "#" * level
+            lines.append(f"{prefix} {heading}")
+
+            instructions = section.get("writing_instructions", "")
+            if instructions:
+                lines.append(f"_{instructions}_\n")
+
+            for point in section.get("key_points", []):
+                lines.append(f"- {point}")
+
+            for sub in section.get("subsections", []):
+                sub_heading = sub.get("heading", "")
+                sub_level = sub.get("heading_level", 3)
+                sub_prefix = "#" * sub_level
+                lines.append(f"\n{sub_prefix} {sub_heading}")
+                sub_instructions = sub.get("writing_instructions", "")
+                if sub_instructions:
+                    lines.append(f"_{sub_instructions}_\n")
+                for point in sub.get("key_points", []):
+                    lines.append(f"- {point}")
+
+            lines.append("")
+
+        return "\n".join(lines)
 
     # ------------------------------------------------------------------ #
     # Outline parsing                                                     #

@@ -233,9 +233,22 @@ class ResearcherAgent(BaseAgent):
         self._reset_token_tracking()
         start = time.monotonic()
 
-        article_theme: str = context.input_data.get("article_theme", "")
-        target_keywords: list[str] = context.input_data.get("target_keywords", [])
-        target_market: str = context.input_data.get("target_market", "Japan real estate")
+        # The orchestrator passes cumulative_data which nests the calendar
+        # entry under the "calendar_entry" key.  Fall back to top-level keys
+        # for standalone usage.
+        cal = context.input_data.get("calendar_entry", {})
+        article_theme: str = (
+            cal.get("topic", "")
+            or context.input_data.get("article_theme", "")
+        )
+        target_keywords: list[str] = (
+            cal.get("target_keywords")
+            or context.input_data.get("target_keywords", [])
+        )
+        target_market: str = (
+            cal.get("target_market", "")
+            or context.input_data.get("target_market", "Japan real estate")
+        )
 
         self._log.info(
             "researcher_execute_start",

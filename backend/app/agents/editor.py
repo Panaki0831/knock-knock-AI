@@ -246,11 +246,29 @@ class EditorAgent(BaseAgent):
 
         self._log.info("editor_execute_start", task_id=context.task_id)
 
-        # ----- extract inputs ------------------------------------------------
-        article_markdown: str = context.input_data.get("article_markdown", "")
-        research_report: str = context.input_data.get("research_report", "")
-        target_keywords: list[str] = context.input_data.get("target_keywords", [])
-        seo_plan: str = context.input_data.get("seo_plan", "")
+        # ----- extract inputs from orchestrator cumulative_data ---------------
+        cal = context.input_data.get("calendar_entry", {})
+        write_step = context.input_data.get("write", {})
+        research_step = context.input_data.get("research", {})
+        plan_step = context.input_data.get("plan", {})
+
+        article_markdown: str = (
+            write_step.get("article_markdown", "")
+            or context.input_data.get("article_markdown", "")
+        )
+        research_report: str = (
+            research_step.get("research_report", "")
+            or context.input_data.get("research_report", "")
+        )
+        target_keywords: list[str] = (
+            cal.get("target_keywords")
+            or context.input_data.get("target_keywords", [])
+        )
+        seo_plan_data = plan_step.get("seo_plan", {})
+        seo_plan: str = (
+            json.dumps(seo_plan_data, ensure_ascii=False) if seo_plan_data
+            else context.input_data.get("seo_plan", "")
+        )
 
         if not article_markdown:
             return AgentResult(

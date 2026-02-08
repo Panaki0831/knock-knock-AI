@@ -205,13 +205,30 @@ class PlannerAgent(BaseAgent):
         self._reset_token_tracking()
         start = time.monotonic()
 
-        research_report: str = context.input_data.get("research_report", "")
-        target_persona: str = context.input_data.get(
-            "target_persona", "Japanese real-estate professionals and investors"
+        # Extract from orchestrator cumulative_data structure
+        cal = context.input_data.get("calendar_entry", {})
+        research_step = context.input_data.get("research", {})
+
+        research_report: str = (
+            research_step.get("research_report", "")
+            or context.input_data.get("research_report", "")
         )
-        keywords: list[str] = context.input_data.get("keywords", [])
-        content_category: str = context.input_data.get("content_category", "Real Estate")
-        funnel_stage: str = context.input_data.get("funnel_stage", "TOFU")
+        target_persona: str = (
+            cal.get("persona", "")
+            or context.input_data.get("target_persona", "Japanese real-estate professionals and investors")
+        )
+        keywords: list[str] = (
+            cal.get("target_keywords")
+            or context.input_data.get("keywords", [])
+        )
+        content_category: str = (
+            cal.get("category", "")
+            or context.input_data.get("content_category", "Real Estate")
+        )
+        funnel_stage: str = (
+            cal.get("funnel_stage", "")
+            or context.input_data.get("funnel_stage", "TOFU")
+        )
 
         self._log.info(
             "planner_execute_start",

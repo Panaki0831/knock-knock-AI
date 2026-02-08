@@ -53,8 +53,9 @@ class Settings(BaseSettings):
     ga4_property_id: str = ""
 
     # --- Agent Model Configuration ---
-    default_orchestrator_model: str = "claude-opus-4-5-20250213"
-    default_writer_model: str = "claude-opus-4-5-20250213"
+    # Use valid Anthropic model IDs. See https://docs.anthropic.com/en/docs/models
+    default_orchestrator_model: str = "claude-sonnet-4-5-20250514"
+    default_writer_model: str = "claude-sonnet-4-5-20250514"
     default_researcher_model: str = "claude-sonnet-4-5-20250514"
     default_planner_model: str = "claude-sonnet-4-5-20250514"
     default_editor_model: str = "claude-sonnet-4-5-20250514"
