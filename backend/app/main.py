@@ -12,7 +12,7 @@ from app.config import settings
 from app.db.database import engine, Base
 
 
-async def _add_column_if_missing(conn, table: str, column: str, col_type: str) -> None:
+def _add_column_if_missing(conn, table: str, column: str, col_type: str) -> None:
     """Add a column to an existing table if it doesn't exist (dev helper)."""
     from sqlalchemy import text
 
@@ -27,6 +27,12 @@ async def _add_column_if_missing(conn, table: str, column: str, col_type: str) -
         conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {col_type}'))
 
 
+def _run_migrations(sync_conn) -> None:
+    """Add missing columns to existing tables (dev only)."""
+    _add_column_if_missing(sync_conn, "pipeline_runs", "calendar_entry_id", "INTEGER")
+    _add_column_if_missing(sync_conn, "pipeline_runs", "topic", "VARCHAR(500)")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown lifecycle."""
@@ -35,16 +41,7 @@ async def lifespan(app: FastAPI):
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
             # Migrate: add columns that create_all doesn't add to existing tables
-            await conn.run_sync(
-                lambda sync_conn: (
-                    _add_column_if_missing(
-                        sync_conn, "pipeline_runs", "calendar_entry_id", "INTEGER"
-                    ),
-                    _add_column_if_missing(
-                        sync_conn, "pipeline_runs", "topic", "VARCHAR(500)"
-                    ),
-                )
-            )
+            await conn.run_sync(_run_migrations)
     yield
     # Shutdown: dispose of engine
     await engine.dispose()
