@@ -90,6 +90,38 @@ following rules:
 - Position knock knock AI as the expert/solution provider for the topic.
 """
 
+_NOTE_ARTICLE_GUIDELINES = """\
+## note記事ライティングガイドライン
+
+この記事は「noteのビジネス記事」として公開される。読者がスマホで"流し読み"しても \
+要点が理解でき、読後に行動したくなる記事を目指す。
+
+### 絶対条件
+- 事実関係は捏造しない。数字・制度・統計などは、根拠がないなら「推測」「一例」と明記する
+- 誇大表現や煽りで釣らない。長期的な信頼を優先する
+- 読者の時間を奪わない。結論・要点を早めに出す
+- "誰でも簡単に""絶対""100%"など、根拠のない断定は禁止
+- 一般論だけで埋めない。必ず具体例・比較・失敗談・反証を入れる
+
+### 文章スタイル
+- 口語寄りだが、馴れ馴れしすぎない（ビジネス読者に不快感を与えない）
+- 1段落は1〜3文。改行を多めにして、視線移動を軽くする
+- 見出しは情報量の多い言葉から始める（見出しだけ追っても流れが分かるように）
+- 抽象語はできるだけ具体例に落とす（場面・人物・行動・会話・数字・期間など）
+
+### 記事構成の型
+- 冒頭30秒で読者が"読む価値"を理解できるよう、**フック → 約束 → 結論**の順で書く
+- 本文の各セクションは「結論 → 理由 → 手順 → 具体例 → 注意点」の流れで展開する
+- 最終セクションの後に必ず以下2つを追加する:
+  1. **まとめ**（3〜5行の要約）
+  2. **今日やること**（読者がすぐ実行できる最小の一歩を1〜3個、箇条書き）
+
+### 見出しルール
+- H2見出しは4〜6個を目安
+- 見出しだけ読んでも記事の流れが分かるようにする
+- 見出しに数字や具体的な情報を含める（例: ×「効果について」→ ○「導入3ヶ月で問い合わせ2倍になった理由」）
+"""
+
 _FIVE_QUALITY_PRINCIPLES = """\
 You MUST internalise and apply the following five quality principles in \
 every sentence you write.  These are non-negotiable.
@@ -155,8 +187,15 @@ You are now writing **Section {section_number}** of the article.
 ## Instructions
 - Write ONLY this section.  Do NOT repeat content already written above.
 - Aim for {target_word_count} words for this section.
-- Start with the section heading (Markdown ## or ###).
+- Start with the section heading (Markdown ## or ###). \
+  見出しは情報量の多い言葉から始め、見出しだけで内容が分かるようにする。\
+  数字や具体的な情報を含めること。
 - Apply all five quality principles rigorously.
+- note記事スタイル: セクション内は「結論 → 理由 → 具体例 → 注意点」の \
+  順で展開する。抽象論ではなく場面・人物・行動・数字で語る。
+- 段落は1〜3文。改行を多めにして、スマホで流し読みしやすくする。
+- 根拠のない断定（"誰でも簡単に""絶対"等）は使わない。\
+  数字や統計に根拠がない場合は「推測」「一例」と明記する。
 - End with a natural bridge sentence that leads into the next section \
   (unless this is the final section, in which case write a compelling \
   conclusion paragraph).
@@ -198,6 +237,7 @@ class WriterAgent(BaseAgent):
             "naturally position knock knock AI throughout the article.\n\n"
             f"{_BRAND_VOICE_GUIDELINES}\n\n"
             f"{_CTA_GUIDELINES}\n\n"
+            f"{_NOTE_ARTICLE_GUIDELINES}\n\n"
             f"{_FIVE_QUALITY_PRINCIPLES}\n\n"
             "IMPORTANT: Output raw Markdown only.  Never wrap your output in "
             "```markdown``` fences.  Never include meta-commentary about what you "
@@ -308,6 +348,13 @@ class WriterAgent(BaseAgent):
                 total_sections=len(sections),
             )
 
+        # ----- generate closing section: まとめ + 今日やること -----------------
+        closing_md = await self._generate_closing(
+            preceding_content="\n\n".join(generated_parts),
+            target_language=target_language,
+        )
+        generated_parts.append(closing_md)
+
         # ----- assemble final article ----------------------------------------
         article_markdown = "\n\n".join(generated_parts)
         word_count = self._count_words(article_markdown, target_language)
@@ -356,13 +403,15 @@ class WriterAgent(BaseAgent):
 
         user_message = (
             "Write the **title** (as a Markdown H1) and the **introduction** for the "
-            "following article.  The introduction should hook the reader, establish "
-            "credibility, and preview what the article will cover.  Aim for 150-250 "
-            "words.\n\n"
-            "IMPORTANT: Include ONE natural CTA link to knock knock AI "
-            "(https://www.knock-knock-ai.com/) in the introduction. Position "
-            "knock knock AI as the solution/expert for this topic. Use Markdown "
-            "link format: [knock knock AI](https://www.knock-knock-ai.com/)\n\n"
+            "following article.\n\n"
+            "## Introduction Structure (note記事スタイル)\n"
+            "冒頭30秒で読む価値を伝えるため、以下の順で書くこと:\n"
+            "1. **フック** -- 読者の悩みや疑問に共感する1〜2文（「〜で困っていませんか？」等）\n"
+            "2. **約束** -- この記事を読むと何が得られるかを明示する\n"
+            "3. **結論の先出し** -- 記事の核心を1〜2文で端的に述べる\n"
+            "4. **CTA** -- knock knock AIをソリューションとして自然に紹介し、"
+            "リンクを1つ挿入: [knock knock AI](https://www.knock-knock-ai.com/)\n\n"
+            "段落は1〜3文ずつ、改行を多めに。Aim for 150-250 words.\n\n"
             f"## Full Article Outline\n{outline}\n\n"
             f"## Research Report\n{research_report}\n\n"
             f"{lang_instruction}"
@@ -418,6 +467,41 @@ class WriterAgent(BaseAgent):
         response = await self._call_llm(
             [{"role": "user", "content": user_message}],
             max_tokens=4096,
+            temperature=0.72,
+        )
+        return self._text_from_response(response)
+
+    async def _generate_closing(
+        self,
+        *,
+        preceding_content: str,
+        target_language: str,
+    ) -> str:
+        """Generate the note-style closing: まとめ + 今日やること."""
+        preceding_excerpt = self._smart_truncate(preceding_content, max_chars=5000)
+        lang_instruction = self._language_instruction(target_language)
+
+        user_message = (
+            "記事本文は完成しました。以下の記事全体を踏まえて、"
+            "note記事の締めくくりを書いてください。\n\n"
+            f"## これまでの記事内容\n{preceding_excerpt}\n\n"
+            "## 出力する内容（この順番で）\n\n"
+            "### 1. まとめ（H2見出し「まとめ」で始める）\n"
+            "- 記事全体の要点を3〜5行で簡潔にまとめる\n"
+            "- 読者が「読んでよかった」と思える振り返りにする\n"
+            "- knock knock AIへのCTAリンクを1つ自然に含める: "
+            "[knock knock AI](https://www.knock-knock-ai.com/)\n\n"
+            "### 2. 今日やること（H2見出し「今日やること」で始める）\n"
+            "- 読者がすぐ実行できる最小の一歩を1〜3個、箇条書きで提示する\n"
+            "- 具体的で、ハードルが低く、行動に移しやすいものにする\n"
+            "- 例:「まずは○○を10分だけ試してみる」「○○のアカウントを作成する」等\n\n"
+            f"{lang_instruction}\n\n"
+            "Output ONLY the Markdown for まとめ and 今日やること -- no meta-commentary."
+        )
+
+        response = await self._call_llm(
+            [{"role": "user", "content": user_message}],
+            max_tokens=2048,
             temperature=0.72,
         )
         return self._text_from_response(response)
