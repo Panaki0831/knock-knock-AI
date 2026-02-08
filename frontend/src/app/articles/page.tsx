@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import type { Article, ArticleList, ArticleContent, PipelineRun } from "@/lib/api";
 import {
   fetchArticles,
@@ -12,6 +13,8 @@ import {
   deleteFailedRuns,
   deletePipelineRun,
 } from "@/lib/api";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
 
 export default function ArticlesPage() {
   const [data, setData] = useState<ArticleList | null>(null);
@@ -276,18 +279,44 @@ export default function ArticlesPage() {
               <h3 className="text-lg font-bold truncate pr-4">
                 {previewContent.title}
               </h3>
-              <button
-                onClick={() => setPreviewContent(null)}
-                className="px-3 py-1 text-sm bg-gray-100 text-gray-600 rounded hover:bg-gray-200 shrink-0"
-              >
-                Close
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <Link
+                  href={`/articles/${previewContent.id}/edit`}
+                  className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Edit
+                </Link>
+                <button
+                  onClick={() => setPreviewContent(null)}
+                  className="px-3 py-1 text-sm bg-gray-100 text-gray-600 rounded hover:bg-gray-200"
+                >
+                  Close
+                </button>
+              </div>
             </div>
-            <div className="overflow-y-auto px-6 py-4 prose prose-sm max-w-none">
+            <div className="overflow-y-auto px-6 py-4">
               {previewContent.content_markdown ? (
-                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-800">
-                  {previewContent.content_markdown}
-                </pre>
+                <>
+                  <style dangerouslySetInnerHTML={{ __html: `
+                    .pv-h1 { font-size: 2rem; font-weight: 800; margin: 0 0 1.5rem 0; color: #111; line-height: 1.2; }
+                    .pv-h2 { font-size: 1.5rem; font-weight: 700; margin: 2rem 0 0.75rem 0; color: #222; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.5rem; }
+                    .pv-h3 { font-size: 1.2rem; font-weight: 600; margin: 1.5rem 0 0.5rem 0; color: #333; }
+                    .pv-p { margin: 0.75rem 0; line-height: 1.8; color: #374151; font-size: 0.95rem; }
+                    .pv-link { color: #2563eb; text-decoration: underline; }
+                    .pv-ul { margin: 0.5rem 0; padding-left: 1.5rem; list-style: disc; }
+                    .pv-li { margin: 0.25rem 0; line-height: 1.6; color: #374151; }
+                    .pv-bq { border-left: 4px solid #d1d5db; padding: 0.5rem 1rem; margin: 1rem 0; color: #6b7280; background: #f9fafb; border-radius: 0 0.5rem 0.5rem 0; }
+                    .pv-code { background: #f3f4f6; padding: 0.15rem 0.4rem; border-radius: 0.25rem; font-size: 0.85em; font-family: monospace; color: #dc2626; }
+                    .pv-hr { border: none; border-top: 1px solid #e5e7eb; margin: 2rem 0; }
+                    .pv-img { max-width: 100%; height: auto; border-radius: 0.75rem; margin: 1.5rem 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+                  ` }} />
+                  <div
+                    className="max-w-3xl mx-auto"
+                    dangerouslySetInnerHTML={{
+                      __html: renderMarkdownPreview(previewContent.content_markdown),
+                    }}
+                  />
+                </>
               ) : (
                 <p className="text-gray-400 text-center py-8">
                   No content available
@@ -349,6 +378,12 @@ export default function ArticlesPage() {
                       >
                         View
                       </button>
+                      <Link
+                        href={`/articles/${article.id}/edit`}
+                        className="px-2 py-1 text-xs bg-purple-50 text-purple-700 rounded hover:bg-purple-100"
+                      >
+                        Edit
+                      </Link>
                       {article.status === "reviewing" && (
                         <>
                           <button
@@ -511,4 +546,67 @@ function StepProgressBar({ currentStep }: { currentStep: string | null }) {
       </span>
     </div>
   );
+}
+
+function renderMarkdownPreview(md: string): string {
+  let html = md;
+
+  // Images: ![alt](url)
+  html = html.replace(
+    /!\[([^\]]*)\]\(([^)]+)\)/g,
+    (_, alt, src) => {
+      const fullSrc = src.startsWith("/api/")
+        ? `${API_BASE.replace("/api/v1", "")}${src}`
+        : src;
+      return `<img src="${fullSrc}" alt="${alt}" class="pv-img" />`;
+    }
+  );
+
+  // H1
+  html = html.replace(/^# (.+)$/gm, '<h1 class="pv-h1">$1</h1>');
+  // H3 before H2
+  html = html.replace(/^### (.+)$/gm, '<h3 class="pv-h3">$1</h3>');
+  // H2
+  html = html.replace(/^## (.+)$/gm, '<h2 class="pv-h2">$1</h2>');
+  // Bold
+  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  // Italic
+  html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
+  // Links
+  html = html.replace(
+    /\[([^\]]+)\]\(([^)]+)\)/g,
+    '<a href="$2" class="pv-link" target="_blank" rel="noopener">$1</a>'
+  );
+  // Unordered lists
+  html = html.replace(/^- (.+)$/gm, '<li class="pv-li">$1</li>');
+  html = html.replace(
+    /(<li class="pv-li">.*<\/li>\n?)+/g,
+    (match) => `<ul class="pv-ul">${match}</ul>`
+  );
+  // Ordered lists
+  html = html.replace(/^\d+\. (.+)$/gm, '<li class="pv-li">$1</li>');
+  // Blockquotes
+  html = html.replace(
+    /^> (.+)$/gm,
+    '<blockquote class="pv-bq">$1</blockquote>'
+  );
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code class="pv-code">$1</code>');
+  // Horizontal rules
+  html = html.replace(/^---$/gm, '<hr class="pv-hr" />');
+  // Paragraphs
+  html = html.replace(/\n\n/g, '</p><p class="pv-p">');
+  html = `<p class="pv-p">${html}</p>`;
+  // Clean up empty paragraphs
+  html = html.replace(/<p class="pv-p"><\/p>/g, "");
+  html = html.replace(
+    /<p class="pv-p">(<h[123]|<ul|<blockquote|<hr|<img)/g,
+    "$1"
+  );
+  html = html.replace(
+    /(<\/h[123]>|<\/ul>|<\/blockquote>|<\/hr>)<\/p>/g,
+    "$1"
+  );
+
+  return html;
 }

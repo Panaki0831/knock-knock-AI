@@ -115,6 +115,21 @@ export function deleteArticle(id: number): Promise<{ deleted: number }> {
   return apiFetch(`/articles/${id}`, { method: "DELETE" });
 }
 
+export function updateArticle(
+  id: number,
+  data: {
+    title?: string;
+    content_markdown?: string;
+    meta_description?: string;
+    target_keywords?: string[];
+  }
+): Promise<Article> {
+  return apiFetch(`/articles/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
 // ── Calendar ───────────────────────────────────────────────────────────────
 
 export interface CalendarEntry {
