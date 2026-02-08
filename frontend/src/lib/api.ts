@@ -200,3 +200,113 @@ export function deleteFailedRuns(): Promise<{ deleted: number }> {
 export function deletePipelineRun(id: number): Promise<{ deleted: number }> {
   return apiFetch(`/pipeline/runs/${id}`, { method: "DELETE" });
 }
+
+// ── Knowledge Base ────────────────────────────────────────────────────────
+
+export interface KnowledgeDocument {
+  id: number;
+  filename: string;
+  file_type: string;
+  file_size: number;
+  description: string | null;
+  category: string | null;
+  page_count: number;
+  content_preview: string | null;
+  created_at: string;
+}
+
+export interface KnowledgeDocumentList {
+  items: KnowledgeDocument[];
+  total: number;
+}
+
+export interface KnowledgeDocumentContent {
+  id: number;
+  filename: string;
+  content_text: string | null;
+}
+
+export function fetchKnowledgeDocuments(): Promise<KnowledgeDocumentList> {
+  return apiFetch("/knowledge");
+}
+
+export function fetchKnowledgeDocumentContent(
+  id: number
+): Promise<KnowledgeDocumentContent> {
+  return apiFetch(`/knowledge/${id}`);
+}
+
+export async function uploadKnowledgeDocument(
+  file: File,
+  description?: string,
+  category?: string
+): Promise<KnowledgeDocument> {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (description) formData.append("description", description);
+  if (category) formData.append("category", category);
+
+  const res = await fetch(`${API_BASE}/knowledge`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+export function deleteKnowledgeDocument(
+  id: number
+): Promise<{ deleted: number }> {
+  return apiFetch(`/knowledge/${id}`, { method: "DELETE" });
+}
+
+// ── Research History ──────────────────────────────────────────────────────
+
+export interface ResearchHistorySummary {
+  id: number;
+  pipeline_run_id: number | null;
+  topic: string;
+  target_keywords: string[] | null;
+  source_count: number;
+  stat_count: number;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface ResearchHistoryDetail {
+  id: number;
+  pipeline_run_id: number | null;
+  topic: string;
+  target_keywords: string[] | null;
+  research_report: string | null;
+  key_statistics: Record<string, any>[] | null;
+  sources: string[] | null;
+  competitor_insights: string | null;
+  market_data: string | null;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface ResearchHistoryList {
+  items: ResearchHistorySummary[];
+  total: number;
+}
+
+export function fetchResearchHistory(): Promise<ResearchHistoryList> {
+  return apiFetch("/research-history");
+}
+
+export function fetchResearchHistoryDetail(
+  id: number
+): Promise<ResearchHistoryDetail> {
+  return apiFetch(`/research-history/${id}`);
+}
+
+export function deleteResearchHistory(
+  id: number
+): Promise<{ deleted: number }> {
+  return apiFetch(`/research-history/${id}`, { method: "DELETE" });
+}

@@ -3,18 +3,71 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import structlog
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.orchestrator import OrchestratorAgent
 from app.models.article import Article, ArticleStatus
 from app.models.content_calendar import CalendarStatus, ContentCalendar
+from app.models.knowledge_document import KnowledgeDocument
 from app.models.pipeline_run import PipelineRun, PipelineStatus
+from app.models.research_history import ResearchHistory
 
 logger = structlog.get_logger(__name__)
+
+
+async def _load_knowledge_context(session: AsyncSession) -> str:
+    """Load all knowledge base documents and return as context string."""
+    result = await session.execute(
+        select(KnowledgeDocument).order_by(KnowledgeDocument.created_at.desc())
+    )
+    docs = result.scalars().all()
+    if not docs:
+        return ""
+
+    parts: list[str] = ["=== Knowledge Base ==="]
+    for doc in docs:
+        if doc.content_text:
+            header = f"\n--- {doc.filename}"
+            if doc.description:
+                header += f" ({doc.description})"
+            header += " ---\n"
+            # Limit each doc to ~3000 chars to avoid overloading prompts
+            text = doc.content_text[:3000]
+            parts.append(header + text)
+
+    return "\n".join(parts)
+
+
+async def _save_research_history(
+    session: AsyncSession,
+    pipeline_run_id: int,
+    topic: str,
+    target_keywords: list[str],
+    research_data: dict[str, Any],
+) -> None:
+    """Save researcher output to research_history for future reference."""
+    try:
+        entry = ResearchHistory(
+            pipeline_run_id=pipeline_run_id,
+            topic=topic,
+            target_keywords=target_keywords,
+            research_report=research_data.get("research_report"),
+            key_statistics=research_data.get("key_statistics"),
+            sources=research_data.get("sources"),
+            competitor_insights=research_data.get("competitor_insights"),
+            market_data=research_data.get("market_data"),
+            expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+        )
+        session.add(entry)
+        await session.flush()
+        logger.info("research_history_saved", topic=topic, entry_id=entry.id)
+    except Exception as exc:
+        logger.warning("research_history_save_failed", error=str(exc))
 
 
 async def trigger_pipeline(
@@ -60,7 +113,10 @@ async def trigger_pipeline(
     calendar_entry.status = CalendarStatus.IN_PROGRESS
     await session.flush()
 
-    # 4. Build the orchestrator input
+    # 4. Load knowledge base context
+    knowledge_context = await _load_knowledge_context(session)
+
+    # 5. Build the orchestrator input
     orchestrator_input: dict[str, Any] = {
         "calendar_entry": {
             "topic": calendar_entry.article_theme,
@@ -75,7 +131,11 @@ async def trigger_pipeline(
         }
     }
 
-    # 5. Execute pipeline
+    # Inject knowledge base content if available
+    if knowledge_context:
+        orchestrator_input["knowledge_base"] = knowledge_context
+
+    # 6. Execute pipeline
     orchestrator = OrchestratorAgent()
     try:
         from app.agents.base import AgentContext
@@ -96,6 +156,17 @@ async def trigger_pipeline(
         pipeline_run.steps_log = result.output_data.get("steps", [])
         pipeline_run.total_tokens_used = result.tokens_used
         pipeline_run.total_cost_usd = result.cost_usd
+
+        # Save research history from the pipeline's research step output
+        research_data = result.output_data.get("research_data", {})
+        if research_data:
+            await _save_research_history(
+                session=session,
+                pipeline_run_id=pipeline_run.id,
+                topic=calendar_entry.article_theme,
+                target_keywords=calendar_entry.target_keywords or [],
+                research_data=research_data,
+            )
 
         if result.success:
             # Create the article record

@@ -252,6 +252,17 @@ class ResearcherAgent(BaseAgent):
             llm_only = True
             self._log.info("using_llm_knowledge_only")
 
+        # ---- 1b. Load knowledge base context (if provided) -------------------------
+        knowledge_context = context.input_data.get("knowledge_base", "")
+        kb_section = ""
+        if knowledge_context:
+            kb_section = (
+                f"\n\n=== Company Knowledge Base ===\n"
+                f"The following internal documents have been provided. "
+                f"Use this information to ensure accuracy and brand consistency.\n\n"
+                f"{knowledge_context}\n"
+            )
+
         # ---- 2. LLM synthesis ----------------------------------------------------
         if llm_only:
             user_prompt = (
@@ -263,6 +274,7 @@ class ResearcherAgent(BaseAgent):
                 f"Include relevant statistics, market trends, and competitor insights "
                 f"based on your training data. For sources, use 'LLM knowledge' where "
                 f"you cannot provide a specific URL.\n\n"
+                f"{kb_section}"
                 f"Respond with ONLY a JSON object (no markdown fences)."
             )
         else:
@@ -273,6 +285,7 @@ class ResearcherAgent(BaseAgent):
                 f"Target market: {target_market}\n\n"
                 f"Below are the raw web-search results. Analyse them and produce "
                 f"the JSON output described in your system instructions.\n\n"
+                f"{kb_section}"
                 f"Respond with ONLY a JSON object (no markdown fences).\n\n"
                 f"{formatted_results}"
             )

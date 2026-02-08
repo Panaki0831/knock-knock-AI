@@ -287,6 +287,7 @@ class OrchestratorAgent(BaseAgent):
             "article_id": article_id,
             "steps": [o.to_dict() for o in step_outcomes],
             "final_output": step_outcomes[-1].output_data if step_outcomes else {},
+            "research_data": cumulative_data.get("research", {}),
             "total_tokens_used": total_tokens,
             "total_cost_usd": round(total_cost, 6),
             "total_execution_time_seconds": round(total_time, 3),

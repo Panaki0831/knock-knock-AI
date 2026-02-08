@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import articles, calendar, dashboard, pipeline
+from app.api.routes import articles, calendar, dashboard, knowledge, pipeline, research_history
 from app.config import settings
 from app.db.database import engine, Base
 
@@ -47,6 +47,20 @@ def _cleanup_stale_runs(sync_conn) -> None:
     )
 
 
+def _cleanup_expired_research(sync_conn) -> None:
+    """Delete research history entries older than 1 month."""
+    from sqlalchemy import text
+
+    result = sync_conn.execute(
+        text("DELETE FROM research_history WHERE expires_at < NOW()")
+    )
+    if result.rowcount:
+        import structlog
+        structlog.get_logger(__name__).info(
+            "expired_research_deleted", count=result.rowcount
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown lifecycle."""
@@ -58,6 +72,8 @@ async def lifespan(app: FastAPI):
             await conn.run_sync(_run_migrations)
             # Clean up abandoned pipeline runs from previous restarts
             await conn.run_sync(_cleanup_stale_runs)
+            # Auto-delete expired research history entries (> 1 month)
+            await conn.run_sync(_cleanup_expired_research)
     yield
     # Shutdown: dispose of engine
     await engine.dispose()
@@ -83,6 +99,10 @@ app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["dashboar
 app.include_router(articles.router, prefix="/api/v1/articles", tags=["articles"])
 app.include_router(calendar.router, prefix="/api/v1/calendar", tags=["calendar"])
 app.include_router(pipeline.router, prefix="/api/v1/pipeline", tags=["pipeline"])
+app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["knowledge"])
+app.include_router(
+    research_history.router, prefix="/api/v1/research-history", tags=["research-history"]
+)
 
 
 @app.get("/health")

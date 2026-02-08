@@ -7,6 +7,8 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: "BarChart3" },
   { href: "/articles", label: "Articles", icon: "FileText" },
   { href: "/calendar", label: "Calendar", icon: "Calendar" },
+  { href: "/knowledge", label: "Knowledge Base", icon: "BookOpen" },
+  { href: "/research", label: "Research History", icon: "Search" },
 ];
 
 export default function Sidebar() {
@@ -55,6 +57,8 @@ function getIcon(name: string): string {
     BarChart3: "\u{1F4CA}",
     FileText: "\u{1F4DD}",
     Calendar: "\u{1F4C5}",
+    BookOpen: "\u{1F4DA}",
+    Search: "\u{1F50D}",
   };
   return icons[name] || "\u{25CF}";
 }
