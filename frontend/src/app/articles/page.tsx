@@ -447,11 +447,12 @@ const STEP_LABELS: Record<string, string> = {
   plan: "Planning",
   write: "Writing",
   edit: "Editing",
+  image_generate: "Images",
   localize: "Localizing",
   publish: "Publishing",
 };
 
-const STEP_ORDER = ["research", "plan", "write", "edit", "publish"];
+const STEP_ORDER = ["research", "plan", "write", "edit", "image_generate", "publish"];
 
 function PipelineStatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {

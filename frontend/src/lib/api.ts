@@ -310,3 +310,84 @@ export function deleteResearchHistory(
 ): Promise<{ deleted: number }> {
   return apiFetch(`/research-history/${id}`, { method: "DELETE" });
 }
+
+// ── Images ────────────────────────────────────────────────────────────────
+
+export interface ImageAsset {
+  id: number;
+  filename: string;
+  mime_type: string;
+  file_size: number;
+  width: number | null;
+  height: number | null;
+  source: string;
+  tags: string[] | null;
+  description: string | null;
+  generation_prompt: string | null;
+  generation_model: string | null;
+  article_id: number | null;
+  section_heading: string | null;
+  is_knowledge_base: boolean;
+  created_at: string;
+}
+
+export interface ImageAssetList {
+  items: ImageAsset[];
+  total: number;
+}
+
+export function fetchImages(params?: {
+  source?: string;
+  is_knowledge_base?: boolean;
+  tag?: string;
+}): Promise<ImageAssetList> {
+  const qs = new URLSearchParams();
+  if (params?.source) qs.set("source", params.source);
+  if (params?.is_knowledge_base !== undefined)
+    qs.set("is_knowledge_base", String(params.is_knowledge_base));
+  if (params?.tag) qs.set("tag", params.tag);
+  const query = qs.toString();
+  return apiFetch(`/images${query ? `?${query}` : ""}`);
+}
+
+export function imageFileUrl(id: number): string {
+  return `${API_BASE}/images/${id}/file`;
+}
+
+export async function uploadImage(
+  file: File,
+  tags?: string,
+  description?: string,
+  isKnowledgeBase?: boolean
+): Promise<ImageAsset> {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (tags) formData.append("tags", tags);
+  if (description) formData.append("description", description);
+  if (isKnowledgeBase) formData.append("is_knowledge_base", "true");
+
+  const res = await fetch(`${API_BASE}/images`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+export function deleteImage(id: number): Promise<{ deleted: number }> {
+  return apiFetch(`/images/${id}`, { method: "DELETE" });
+}
+
+export function updateImageTags(
+  id: number,
+  tags: string[],
+  description?: string
+): Promise<ImageAsset> {
+  return apiFetch(`/images/${id}/tags`, {
+    method: "PATCH",
+    body: JSON.stringify({ tags, description }),
+  });
+}

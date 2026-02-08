@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import articles, calendar, dashboard, knowledge, pipeline, research_history
+from app.api.routes import articles, calendar, dashboard, images, knowledge, pipeline, research_history
 from app.config import settings
 from app.db.database import engine, Base
 
@@ -100,6 +100,7 @@ app.include_router(articles.router, prefix="/api/v1/articles", tags=["articles"]
 app.include_router(calendar.router, prefix="/api/v1/calendar", tags=["calendar"])
 app.include_router(pipeline.router, prefix="/api/v1/pipeline", tags=["pipeline"])
 app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["knowledge"])
+app.include_router(images.router, prefix="/api/v1/images", tags=["images"])
 app.include_router(
     research_history.router, prefix="/api/v1/research-history", tags=["research-history"]
 )

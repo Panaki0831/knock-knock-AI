@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.orchestrator import OrchestratorAgent
 from app.models.article import Article, ArticleStatus
 from app.models.content_calendar import CalendarStatus, ContentCalendar
+from app.models.image_asset import ImageAsset
 from app.models.knowledge_document import KnowledgeDocument
 from app.models.pipeline_run import PipelineRun, PipelineStatus
 from app.models.research_history import ResearchHistory
@@ -43,6 +45,57 @@ async def _load_knowledge_context(session: AsyncSession) -> str:
     return "\n".join(parts)
 
 
+async def _load_knowledge_images(session: AsyncSession) -> list[dict[str, Any]]:
+    """Load knowledge base images with their tags for the image generator."""
+    result = await session.execute(
+        select(ImageAsset).where(ImageAsset.is_knowledge_base == True)  # noqa: E712
+    )
+    images = result.scalars().all()
+    return [
+        {
+            "id": img.id,
+            "filename": img.filename,
+            "tags": img.tags or [],
+            "description": img.description or "",
+        }
+        for img in images
+    ]
+
+
+async def _save_generated_images(
+    session: AsyncSession,
+    article_id: int,
+    image_data: list[dict[str, Any]],
+) -> list[int]:
+    """Save generated image metadata to the database and return image IDs."""
+    image_ids: list[int] = []
+    for img in image_data:
+        asset = ImageAsset(
+            filename=img["filename"],
+            file_path=img["file_path"],
+            mime_type="image/png",
+            file_size=img.get("file_size", 0),
+            width=img.get("width"),
+            height=img.get("height"),
+            source="generated",
+            tags=img.get("tags"),
+            description=img.get("section_heading", ""),
+            generation_prompt=img.get("prompt", ""),
+            generation_model="dall-e-3",
+            article_id=article_id,
+            section_heading=img.get("section_heading", ""),
+            is_knowledge_base=False,
+        )
+        session.add(asset)
+        await session.flush()
+        image_ids.append(asset.id)
+
+        # Replace placeholder in markdown will be handled after article creation
+        img["db_id"] = asset.id
+
+    return image_ids
+
+
 async def _save_research_history(
     session: AsyncSession,
     pipeline_run_id: int,
@@ -68,6 +121,21 @@ async def _save_research_history(
         logger.info("research_history_saved", topic=topic, entry_id=entry.id)
     except Exception as exc:
         logger.warning("research_history_save_failed", error=str(exc))
+
+
+def _resolve_image_placeholders(
+    markdown: str,
+    generated_images: list[dict[str, Any]],
+) -> str:
+    """Replace {IMAGE_PLACEHOLDER:filename} references with actual API URLs."""
+    for img in generated_images:
+        filename = img.get("filename", "")
+        db_id = img.get("db_id")
+        if filename and db_id:
+            placeholder = f"{{IMAGE_PLACEHOLDER:{filename}}}"
+            real_url = f"/api/v1/images/{db_id}/file"
+            markdown = markdown.replace(placeholder, real_url)
+    return markdown
 
 
 async def trigger_pipeline(
@@ -113,8 +181,9 @@ async def trigger_pipeline(
     calendar_entry.status = CalendarStatus.IN_PROGRESS
     await session.flush()
 
-    # 4. Load knowledge base context
+    # 4. Load knowledge base context and images
     knowledge_context = await _load_knowledge_context(session)
+    knowledge_images = await _load_knowledge_images(session)
 
     # 5. Build the orchestrator input
     orchestrator_input: dict[str, Any] = {
@@ -131,9 +200,11 @@ async def trigger_pipeline(
         }
     }
 
-    # Inject knowledge base content if available
+    # Inject knowledge base content and images if available
     if knowledge_context:
         orchestrator_input["knowledge_base"] = knowledge_context
+    if knowledge_images:
+        orchestrator_input["knowledge_images"] = knowledge_images
 
     # 6. Execute pipeline
     orchestrator = OrchestratorAgent()
@@ -176,6 +247,15 @@ async def trigger_pipeline(
                 or final_output.get("edited_markdown")
                 or final_output.get("article_markdown", "")
             )
+
+            # Check for generated images from the image_generate step
+            image_gen_data = result.output_data.get("image_generate_data", {})
+            generated_images = image_gen_data.get("generated_images", [])
+
+            # If image_generate step ran, use its markdown
+            if image_gen_data.get("article_markdown"):
+                article_markdown = image_gen_data["article_markdown"]
+
             title = _extract_title(article_markdown) or calendar_entry.article_theme
             slug = _slugify(title, pipeline_run.id)
 
@@ -192,6 +272,14 @@ async def trigger_pipeline(
             )
             session.add(article)
             await session.flush()
+
+            # Save generated images to DB and resolve placeholders
+            if generated_images:
+                await _save_generated_images(session, article.id, generated_images)
+                article.content_markdown = _resolve_image_placeholders(
+                    article_markdown, generated_images
+                )
+                await session.flush()
 
             pipeline_run.article_id = article.id
             pipeline_run.status = PipelineStatus.COMPLETED
@@ -231,12 +319,12 @@ def _extract_title(markdown: str) -> str:
 
 def _slugify(text: str, fallback_id: int) -> str:
     """Create a URL-friendly slug from text."""
-    import re
+    import re as _re
     import unicodedata
 
     text = unicodedata.normalize("NFKD", text)
-    slug = re.sub(r"[^\w\s-]", "", text.lower())
-    slug = re.sub(r"[-\s]+", "-", slug).strip("-")
+    slug = _re.sub(r"[^\w\s-]", "", text.lower())
+    slug = _re.sub(r"[-\s]+", "-", slug).strip("-")
     if not slug:
         slug = f"article-{fallback_id}"
     return slug[:200]

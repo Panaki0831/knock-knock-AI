@@ -8,6 +8,7 @@ const navItems = [
   { href: "/articles", label: "Articles", icon: "FileText" },
   { href: "/calendar", label: "Calendar", icon: "Calendar" },
   { href: "/knowledge", label: "Knowledge Base", icon: "BookOpen" },
+  { href: "/gallery", label: "Image Gallery", icon: "Image" },
   { href: "/research", label: "Research History", icon: "Search" },
 ];
 
@@ -58,6 +59,7 @@ function getIcon(name: string): string {
     FileText: "\u{1F4DD}",
     Calendar: "\u{1F4C5}",
     BookOpen: "\u{1F4DA}",
+    Image: "\u{1F5BC}",
     Search: "\u{1F50D}",
   };
   return icons[name] || "\u{25CF}";

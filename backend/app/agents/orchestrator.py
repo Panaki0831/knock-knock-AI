@@ -38,6 +38,7 @@ class PipelineStep(str, Enum):
     PLAN = "plan"
     WRITE = "write"
     EDIT = "edit"
+    IMAGE_GENERATE = "image_generate"
     LOCALIZE = "localize"
     PUBLISH = "publish"
 
@@ -48,6 +49,7 @@ _DEFAULT_STEPS: list[PipelineStep] = [
     PipelineStep.PLAN,
     PipelineStep.WRITE,
     PipelineStep.EDIT,
+    PipelineStep.IMAGE_GENERATE,
     PipelineStep.LOCALIZE,
     PipelineStep.PUBLISH,
 ]
@@ -288,6 +290,7 @@ class OrchestratorAgent(BaseAgent):
             "steps": [o.to_dict() for o in step_outcomes],
             "final_output": step_outcomes[-1].output_data if step_outcomes else {},
             "research_data": cumulative_data.get("research", {}),
+            "image_generate_data": cumulative_data.get("image_generate", {}),
             "total_tokens_used": total_tokens,
             "total_cost_usd": round(total_cost, 6),
             "total_execution_time_seconds": round(total_time, 3),
@@ -305,13 +308,18 @@ class OrchestratorAgent(BaseAgent):
 
         The localization step is included only when the calendar entry
         specifies ``target_locales`` with at least one non-empty value.
+        The image generation step is included only when an OpenAI API key
+        is configured.
         """
         target_locales: list[str] = calendar_entry.get("target_locales", [])
         needs_localization = bool(target_locales and any(loc.strip() for loc in target_locales))
+        has_openai = bool(settings.openai_api_key)
 
         steps: list[PipelineStep] = []
         for step in _DEFAULT_STEPS:
             if step is PipelineStep.LOCALIZE and not needs_localization:
+                continue
+            if step is PipelineStep.IMAGE_GENERATE and not has_openai:
                 continue
             steps.append(step)
         return steps
@@ -512,6 +520,11 @@ class OrchestratorAgent(BaseAgent):
             from app.agents.editor import EditorAgent
 
             return EditorAgent()
+
+        if step is PipelineStep.IMAGE_GENERATE:
+            from app.agents.image_generator import ImageGeneratorAgent
+
+            return ImageGeneratorAgent()
 
         if step is PipelineStep.LOCALIZE:
             from app.agents.localizer import LocalizerAgent
