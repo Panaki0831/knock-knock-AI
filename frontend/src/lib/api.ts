@@ -177,3 +177,7 @@ export function fetchPipelineRuns(): Promise<{
 }> {
   return apiFetch("/pipeline/runs");
 }
+
+export function deleteFailedRuns(): Promise<{ deleted: number }> {
+  return apiFetch("/pipeline/runs/failed", { method: "DELETE" });
+}

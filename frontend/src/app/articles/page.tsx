@@ -7,6 +7,7 @@ import {
   approveArticle,
   rejectArticle,
   fetchPipelineRuns,
+  deleteFailedRuns,
 } from "@/lib/api";
 
 export default function ArticlesPage() {
@@ -52,13 +53,14 @@ export default function ArticlesPage() {
     load();
   };
 
-  // Filter pipeline runs: show only in-progress or failed (not completed ones that already have an article)
-  const activeRuns = pipelineRuns.filter(
-    (r) =>
-      r.status === "pending" ||
-      r.status === "running" ||
-      r.status === "failed"
+  // Filter pipeline runs: show active runs + only the 3 most recent failures
+  const activeInProgress = pipelineRuns.filter(
+    (r) => r.status === "pending" || r.status === "running"
   );
+  const recentFailed = pipelineRuns
+    .filter((r) => r.status === "failed")
+    .slice(0, 3); // Only last 3 failures (already sorted by created_at DESC)
+  const activeRuns = [...activeInProgress, ...recentFailed];
 
   const showActiveRuns =
     !statusFilter ||
@@ -99,9 +101,22 @@ export default function ArticlesPage() {
       {/* Active Pipeline Runs Section */}
       {showActiveRuns && activeRuns.length > 0 && (
         <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
-            Pipeline Runs
-          </h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
+              Pipeline Runs
+            </h3>
+            {recentFailed.length > 0 && (
+              <button
+                onClick={async () => {
+                  await deleteFailedRuns();
+                  load();
+                }}
+                className="px-3 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200"
+              >
+                Clear Failed Runs
+              </button>
+            )}
+          </div>
           <div className="space-y-2">
             {activeRuns
               .filter((r) =>

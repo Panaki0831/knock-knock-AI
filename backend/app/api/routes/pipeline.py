@@ -147,3 +147,17 @@ async def get_pipeline_run(
     if run is None:
         raise HTTPException(status_code=404, detail="Pipeline run not found")
     return PipelineRunOut.model_validate(run)
+
+
+@router.delete("/runs/failed", status_code=200)
+async def delete_failed_runs(
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete all failed pipeline runs to clean up the list."""
+    from sqlalchemy import delete
+
+    result = await session.execute(
+        delete(PipelineRun).where(PipelineRun.status == PipelineStatus.FAILED)
+    )
+    await session.commit()
+    return {"deleted": result.rowcount}
